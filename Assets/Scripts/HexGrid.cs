@@ -18,7 +18,8 @@ public enum TileType
 {
     LAND,
     WATER,
-    STONE
+    STONE,
+    NUM_TYPES
 }
 
 public struct TileCoord
@@ -60,10 +61,13 @@ public class HexGrid : MonoBehaviour
 {
     public int xDimensions = 5;
     public int yDimensions = 5;
+    private LineRenderer lineRenderer;
+    public Material lineMaterial;
+
     public HexTile[,] m_grid;
     public float tileSize = 10f;
 
-    Mesh mesh;
+    Mesh m_hexMesh;
     Vector3[] vertices;
     int[] indices;
     Color[] colors;
@@ -101,7 +105,7 @@ public class HexGrid : MonoBehaviour
 
     void Start()
     {
-        mesh = new Mesh();
+        m_hexMesh = new Mesh();
         m_grid = new HexTile[xDimensions, yDimensions];
         m_width = tileSize * Mathf.Sqrt(3f);
         m_height = tileSize * 2f;
@@ -110,7 +114,8 @@ public class HexGrid : MonoBehaviour
         {
             for (int y = 0; y < yDimensions; ++y)
             {
-                m_grid[x, y].m_worldCenterPos = new Vector2(Mathf.Sqrt(3f) * (x - .5f * (y & 1)), y * 3f / 2f) * tileSize;
+                int isOdd = (y & 1);
+                m_grid[x, y].m_worldCenterPos = new Vector2(Mathf.Sqrt(3f) * (x - .5f * isOdd), y * 3f / 2f) * tileSize;
             }
         }
 
@@ -120,7 +125,14 @@ public class HexGrid : MonoBehaviour
         vertices = new Vector3[xDimensions * yDimensions * VERTICES_PER_HEX];
         indices = new int[xDimensions * yDimensions * INDICES_PER_HEX];
         MeshFilter filter = GetComponent<MeshFilter>();
-        filter.sharedMesh = mesh;
+        filter.sharedMesh = m_hexMesh;
+
+        lineRenderer = new GameObject("Line0").AddComponent<LineRenderer>();
+        lineRenderer.material = lineMaterial;
+        lineRenderer.SetVertexCount(3);
+        lineRenderer.SetWidth(0.3f, 0.3f);
+        lineRenderer.useWorldSpace = true; 
+
     }
 
     Color GetColorFromTileType(TileType t)
@@ -141,6 +153,22 @@ public class HexGrid : MonoBehaviour
     static Vector2 TransformForAngle(float angleDegrees)
     {
         return new Vector2(Mathf.Cos(Mathf.Deg2Rad * angleDegrees), Mathf.Sin(Mathf.Deg2Rad * angleDegrees));
+    }
+
+    void RenderOutlineForHex(HexTile hexTile)
+    {
+        for (int i = 0; i < VERTICES_PER_HEX ; ++i)
+        {
+            int vertexIndex = i;
+            if (i == VERTICES_PER_HEX - 1)
+                vertexIndex = 0;
+
+            float distanceFromCenter =  (tileSize / 1.0f);
+            Vector2 offsetFromCenter = (rotate_lookup[vertexIndex] * distanceFromCenter);
+            Vector2 renderPos = offsetFromCenter + hexTile.m_worldCenterPos;
+            Vector3 renderPosVec3 = new Vector3(renderPos.x, renderPos.y, -1);
+            lineRenderer.SetPosition(i, renderPosVec3);
+        }
     }
 
     void MakeHexWithIndex(HexTile tile, int idx)
@@ -233,6 +261,10 @@ public class HexGrid : MonoBehaviour
         if (coord.x >= 0 && coord.y >= 0 && coord.x < xDimensions && coord.y < yDimensions)
             m_grid[coord.x, coord.y].m_type = TileType.STONE;
 
+        //RenderOutlineForHex(m_grid[coord.x, coord.y]);
+        lineRenderer.SetPosition(0, new Vector3(-4f, 2f, -1));
+        lineRenderer.SetPosition(1, new Vector3(5f, 2f, -1));
+        lineRenderer.SetPosition(2, new Vector3(10f, -10f, -1));
         //Debug.Log(clickPos);
         Debug.Log(new Vector2(coord.x, coord.y));
     }
@@ -252,11 +284,11 @@ public class HexGrid : MonoBehaviour
             }
         }
 
-        mesh.vertices = vertices;
-        mesh.triangles = indices;
-        mesh.colors = colors;
+        m_hexMesh.vertices = vertices;
+        m_hexMesh.triangles = indices;
+        m_hexMesh.colors = colors;
 
-        mesh.RecalculateBounds();
+        m_hexMesh.RecalculateBounds();
     }
 }
    
