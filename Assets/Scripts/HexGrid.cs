@@ -1,79 +1,26 @@
 ﻿using UnityEngine;
-using System.Collections;
-using System;
-
-public struct HexTile {
-    public HexTile(Vector2 pos)
-    {
-        m_worldCenterPos = pos;
-        m_type = TileType.LAND;
-    }
-
-    public Vector2 m_worldCenterPos;
-    //TODO: Properties
-    public TileType m_type;
-}
-
-public enum TileType
-{
-    LAND,
-    WATER,
-    STONE,
-    NUM_TYPES
-}
-
-public struct TileCoord
-{
-    public int x, y;
-    public TileCoord(int xp, int yp)
-    {
-        x = xp;
-        y = yp;
-    }
-
-    public static bool operator == (TileCoord a, TileCoord b)
-    {
-        if (a.x == b.x && a.x == a.y)
-            return true;
-        return false;
-    }
-
-    public static bool operator !=(TileCoord a, TileCoord b)
-    {
-        if (a.x == b.x && a.x == a.y)
-            return false;
-
-        return true;
-    }
-
-    public static TileCoord operator +(TileCoord a, TileCoord b)
-    {
-        return new TileCoord(a.x + b.x, a.y + b.y);
-    }
-
-    public static TileCoord operator -(TileCoord a, TileCoord b)
-    {
-        return new TileCoord(a.x - b.x, a.y - b.y);
-    }
-}
+using System.Collections.Generic;
+using Vectrosity;
 
 public class HexGrid : MonoBehaviour
 {
     public int xDimensions = 5;
+    public VectorLine m_outline;
     public int yDimensions = 5;
-    private LineRenderer lineRenderer;
-    public Material lineMaterial;
 
     public HexTile[,] m_grid;
     public float tileSize = 10f;
 
     Mesh m_hexMesh;
-    Vector3[] vertices;
-    int[] indices;
-    Color[] colors;
+
+    Vector3[] m_vertices;
+    int[] m_indices;
+    Color[] m_colors;
+    List<Vertex> highlightVertices = new List<Vertex>();
 
     private float m_width;
     private float m_height;
+    private Dictionary<TileType, TileDefinition> m_tileDefinitions;
 
     private const int VERTICES_PER_HEX = 7;
     private const int INDICES_PER_HEX = 18;
@@ -93,22 +40,16 @@ public class HexGrid : MonoBehaviour
       6,5,0
     };
 
-    enum Direction
-    {
-        NORTHWEST,
-        NORTHEAST,
-        EAST,
-        SOUTHEAST,
-        SOUTHWEST,
-        WEST
-    }
-
     void Start()
     {
         m_hexMesh = new Mesh();
         m_grid = new HexTile[xDimensions, yDimensions];
         m_width = tileSize * Mathf.Sqrt(3f);
         m_height = tileSize * 2f;
+
+        m_colors = new Color[xDimensions * yDimensions * VERTICES_PER_HEX];
+        m_vertices = new Vector3[xDimensions * yDimensions * VERTICES_PER_HEX];
+        m_indices = new int[xDimensions * yDimensions * INDICES_PER_HEX];
 
         for (int x = 0; x < xDimensions; ++x)
         {
@@ -119,35 +60,36 @@ public class HexGrid : MonoBehaviour
             }
         }
 
-        m_grid[0, 0].m_type = TileType.WATER;
-
-        colors = new Color[xDimensions * yDimensions * VERTICES_PER_HEX];
-        vertices = new Vector3[xDimensions * yDimensions * VERTICES_PER_HEX];
-        indices = new int[xDimensions * yDimensions * INDICES_PER_HEX];
         MeshFilter filter = GetComponent<MeshFilter>();
         filter.sharedMesh = m_hexMesh;
 
-        lineRenderer = new GameObject("Line0").AddComponent<LineRenderer>();
-        lineRenderer.material = lineMaterial;
-        lineRenderer.SetVertexCount(3);
-        lineRenderer.SetWidth(0.3f, 0.3f);
-        lineRenderer.useWorldSpace = true; 
+       m_outline = new VectorLine("Hex Outline", new List<Vector3>(), 4f, LineType.Continuous);
+
+        m_tileDefinitions = new Dictionary<TileType, TileDefinition>();
+
+        TileDefinition waterTile = new TileDefinition();
+        waterTile.m_renderColor = Color.blue;
+        waterTile.m_isSolid = false;
+        m_tileDefinitions.Add(TileType.WATER, waterTile);
+
+        TileDefinition stoneTile = new TileDefinition();
+        stoneTile.m_renderColor = Color.gray;
+        stoneTile.m_isSolid = true;
+        m_tileDefinitions.Add(TileType.STONE, stoneTile);
+
+        TileDefinition landTile = new TileDefinition();
+        landTile.m_isSolid = false;
+        landTile.m_renderColor = Color.red;
+        m_tileDefinitions.Add(TileType.LAND, landTile);
+
+        //m_outline.rectTransform.position = transform.position;
 
     }
 
     Color GetColorFromTileType(TileType t)
     {
-        switch (t)
-        {
-            case TileType.LAND:
-                return Color.red;
-            case TileType.WATER:
-                return Color.blue;
-            case TileType.STONE:
-                return Color.gray;
-            default:
-                return Color.black;
-        }
+        TileDefinition td = m_tileDefinitions[t];
+        return td.m_renderColor;
     }
 
     static Vector2 TransformForAngle(float angleDegrees)
@@ -155,32 +97,37 @@ public class HexGrid : MonoBehaviour
         return new Vector2(Mathf.Cos(Mathf.Deg2Rad * angleDegrees), Mathf.Sin(Mathf.Deg2Rad * angleDegrees));
     }
 
-    void RenderOutlineForHex(HexTile hexTile)
+    void DrawOutlineHex(Vector2 hexWorldCenterPos, float lineWidth, float offset)
     {
-        for (int i = 0; i < VERTICES_PER_HEX ; ++i)
-        {
-            int vertexIndex = i;
-            if (i == VERTICES_PER_HEX - 1)
-                vertexIndex = 0;
+        List<Vector3> outlineVertexList = new List<Vector3>();
+        Color outlineColor = Color.red;
 
-            float distanceFromCenter =  (tileSize / 1.0f);
-            Vector2 offsetFromCenter = (rotate_lookup[vertexIndex] * distanceFromCenter);
-            Vector2 renderPos = offsetFromCenter + hexTile.m_worldCenterPos;
-            Vector3 renderPosVec3 = new Vector3(renderPos.x, renderPos.y, -1);
-            lineRenderer.SetPosition(i, renderPosVec3);
+        Vector2 halfWidth = new Vector2(((xDimensions / 2f) * m_width) - (m_width / 2f), ((yDimensions / 2f) * m_height) - m_height );
+
+        for (int i = 0; i < VERTICES_PER_HEX; ++i)
+        {
+            if (i == (VERTICES_PER_HEX - 1))
+            {
+                outlineVertexList.Add((rotate_lookup[0] * tileSize) - halfWidth + hexWorldCenterPos);
+            }
+            else
+                outlineVertexList.Add((rotate_lookup[i] * tileSize) - halfWidth + hexWorldCenterPos);
         }
+
+        m_outline.points3 = outlineVertexList;
+        m_outline.Draw();
     }
 
     void MakeHexWithIndex(HexTile tile, int idx)
     {
         for (int i = 0; i < VERTICES_PER_HEX; ++i)
         {
-            vertices[i + (VERTICES_PER_HEX * idx)] = (rotate_lookup[i] * tileSize) + tile.m_worldCenterPos;
-            colors[i + (VERTICES_PER_HEX * idx)] = GetColorFromTileType(tile.m_type);
+            m_vertices[i + (VERTICES_PER_HEX * idx)] = (rotate_lookup[i] * tileSize) + tile.m_worldCenterPos;
+            m_colors[i + (VERTICES_PER_HEX * idx)] = GetColorFromTileType(tile.m_type);
         }
         for (int i = 0; i < INDICES_PER_HEX; ++i)
         {
-            indices[i + (INDICES_PER_HEX * idx)] = indices_lookup[i] + (VERTICES_PER_HEX * idx);
+            m_indices[i + (INDICES_PER_HEX * idx)] = indices_lookup[i] + (VERTICES_PER_HEX * idx);
         }
     }
 
@@ -261,17 +208,18 @@ public class HexGrid : MonoBehaviour
         if (coord.x >= 0 && coord.y >= 0 && coord.x < xDimensions && coord.y < yDimensions)
             m_grid[coord.x, coord.y].m_type = TileType.STONE;
 
-        //RenderOutlineForHex(m_grid[coord.x, coord.y]);
-        lineRenderer.SetPosition(0, new Vector3(-4f, 2f, -1));
-        lineRenderer.SetPosition(1, new Vector3(5f, 2f, -1));
-        lineRenderer.SetPosition(2, new Vector3(10f, -10f, -1));
+        Debug.Log("GridPos: ");
+        Debug.Log(m_grid[coord.x, coord.y].m_worldCenterPos);
+        Debug.Log("ClickPos: ");
+        Debug.Log(clickPos);
+
+        DrawOutlineHex(m_grid[coord.x, coord.y].m_worldCenterPos, 2f, 1f);
         //Debug.Log(clickPos);
-        Debug.Log(new Vector2(coord.x, coord.y));
+        //Debug.Log(new Vector2(coord.x, coord.y));
     }
 
     void Update()
     {
-
         if (Input.GetMouseButton(0))
             OnMouseDown();
 
@@ -284,9 +232,9 @@ public class HexGrid : MonoBehaviour
             }
         }
 
-        m_hexMesh.vertices = vertices;
-        m_hexMesh.triangles = indices;
-        m_hexMesh.colors = colors;
+        m_hexMesh.vertices = m_vertices;
+        m_hexMesh.triangles = m_indices;
+        m_hexMesh.colors = m_colors;
 
         m_hexMesh.RecalculateBounds();
     }
