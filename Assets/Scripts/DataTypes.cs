@@ -1,6 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections;
 
+using Priority_Queue;
+
 public enum TileType
 {
     LAND,
@@ -9,10 +11,18 @@ public enum TileType
     NUM_TYPES
 }
 
-public struct TileDefinition
+public class TileDefinition
 {
+    public TileDefinition()
+    {
+        m_renderColor = Color.black;
+        m_isSolid = false;
+        m_movementCost = 1;
+    }
+
     public Color m_renderColor;
     public bool m_isSolid;
+    public int m_movementCost;
 }
 
 public struct Vertex
@@ -28,12 +38,24 @@ public struct HexTile
     {
         m_worldCenterPos = pos;
         m_type = TileType.LAND;
+        m_unit = null;
     }
 
     public Vector2 m_worldCenterPos;
     //TODO: Properties
     public TileType m_type;
+    public Unit m_unit;
 }
+
+public class GridNode : FastPriorityQueueNode
+{
+    public HexTile m_hexTile { get; private set; }
+    public GridNode(HexTile tile)
+    {
+        m_hexTile = tile;
+    }
+}
+
 
 enum Direction
 {

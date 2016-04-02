@@ -4,9 +4,10 @@ using Vectrosity;
 
 public class HexGrid : MonoBehaviour
 {
-    public int xDimensions = 5;
+    public int gridWidthInHexes = 5;
     public VectorLine m_outline;
-    public int yDimensions = 5;
+    public int gridHeightInHexes = 5;
+    public GameObject m_unitPref;
 
     public HexTile[,] m_grid;
     public float tileSize = 10f;
@@ -18,8 +19,8 @@ public class HexGrid : MonoBehaviour
     Color[] m_colors;
     List<Vertex> highlightVertices = new List<Vertex>();
 
-    private float m_width;
-    private float m_height;
+    private float m_hexWidth;
+    private float m_hexHeight;
     private Dictionary<TileType, TileDefinition> m_tileDefinitions;
 
     private const int VERTICES_PER_HEX = 7;
@@ -40,41 +41,51 @@ public class HexGrid : MonoBehaviour
       6,5,0
     };
 
-    void Start()
+
+    private static readonly TileCoord[,] directions = new TileCoord[2, 6] {
+   { new TileCoord(+1, 0), new TileCoord(+1, -1), new TileCoord(0, -1),
+     new TileCoord(-1, 0), new TileCoord(0, +1), new TileCoord(+1, +1) },
+   { new TileCoord(+1, 0), new TileCoord(0, -1), new TileCoord(-1, -1),
+     new TileCoord(-1, 0), new TileCoord(-1, +1), new TileCoord(0, +1)}
+    };
+
+    void Start() 
     {
         m_hexMesh = new Mesh();
-        m_grid = new HexTile[xDimensions, yDimensions];
-        m_width = tileSize * Mathf.Sqrt(3f);
-        m_height = tileSize * 2f;
+        m_grid = new HexTile[gridWidthInHexes, gridHeightInHexes];
+        m_hexWidth = tileSize * Mathf.Sqrt(3f);
+        m_hexHeight = tileSize * 2f;
 
-        m_colors = new Color[xDimensions * yDimensions * VERTICES_PER_HEX];
-        m_vertices = new Vector3[xDimensions * yDimensions * VERTICES_PER_HEX];
-        m_indices = new int[xDimensions * yDimensions * INDICES_PER_HEX];
+        m_colors = new Color[gridWidthInHexes * gridHeightInHexes * VERTICES_PER_HEX];
+        m_vertices = new Vector3[gridWidthInHexes * gridHeightInHexes * VERTICES_PER_HEX];
+        m_indices = new int[gridWidthInHexes * gridHeightInHexes * INDICES_PER_HEX];
+        m_outline = new VectorLine("Hex Outline", new List<Vector3>(), 4f, LineType.Continuous);
+        
 
-        for (int x = 0; x < xDimensions; ++x)
+        MeshFilter filter = GetComponent<MeshFilter>();
+        filter.sharedMesh = m_hexMesh;
+
+        for (int x = 0; x < gridWidthInHexes; ++x)
         {
-            for (int y = 0; y < yDimensions; ++y)
+            for (int y = 0; y < gridHeightInHexes; ++y)
             {
                 int isOdd = (y & 1);
                 m_grid[x, y].m_worldCenterPos = new Vector2(Mathf.Sqrt(3f) * (x - .5f * isOdd), y * 3f / 2f) * tileSize;
             }
         }
 
-        MeshFilter filter = GetComponent<MeshFilter>();
-        filter.sharedMesh = m_hexMesh;
-
-       m_outline = new VectorLine("Hex Outline", new List<Vector3>(), 4f, LineType.Continuous);
-
         m_tileDefinitions = new Dictionary<TileType, TileDefinition>();
 
         TileDefinition waterTile = new TileDefinition();
         waterTile.m_renderColor = Color.blue;
         waterTile.m_isSolid = false;
+        waterTile.m_movementCost = 2;
         m_tileDefinitions.Add(TileType.WATER, waterTile);
 
         TileDefinition stoneTile = new TileDefinition();
         stoneTile.m_renderColor = Color.gray;
         stoneTile.m_isSolid = true;
+        waterTile.m_movementCost = int.MaxValue;
         m_tileDefinitions.Add(TileType.STONE, stoneTile);
 
         TileDefinition landTile = new TileDefinition();
@@ -82,7 +93,13 @@ public class HexGrid : MonoBehaviour
         landTile.m_renderColor = Color.red;
         m_tileDefinitions.Add(TileType.LAND, landTile);
 
+        GameObject g = Instantiate(m_unitPref, m_grid[0, 0].m_worldCenterPos, Quaternion.identity) as GameObject;
+        Unit u = g.GetComponent<Unit>();
+        u.Initialize(new TileCoord(0, 0), 4, 'T');
+        m_grid[0, 0].m_unit = u;
         //m_outline.rectTransform.position = transform.position;
+
+
 
     }
 
@@ -100,9 +117,8 @@ public class HexGrid : MonoBehaviour
     void DrawOutlineHex(Vector2 hexWorldCenterPos, float lineWidth, float offset)
     {
         List<Vector3> outlineVertexList = new List<Vector3>();
-        Color outlineColor = Color.red;
 
-        Vector2 halfWidth = new Vector2(((xDimensions / 2f) * m_width) - (m_width / 2f), ((yDimensions / 2f) * m_height) - m_height );
+        Vector2 halfWidth = new Vector2(0f, 0f);//new Vector2(((xDimensions / 2f) * m_width) - (m_width / 2f), ((yDimensions / 2f) * m_height) - m_height );
 
         for (int i = 0; i < VERTICES_PER_HEX; ++i)
         {
@@ -113,9 +129,8 @@ public class HexGrid : MonoBehaviour
             else
                 outlineVertexList.Add((rotate_lookup[i] * tileSize) - halfWidth + hexWorldCenterPos);
         }
-
+       
         m_outline.points3 = outlineVertexList;
-        m_outline.Draw();
     }
 
     void MakeHexWithIndex(HexTile tile, int idx)
@@ -139,7 +154,7 @@ public class HexGrid : MonoBehaviour
         return new Vector3(x, y, z);
     }
 
-    Vector3 CubeCoordinatesFromMousePosition(Vector2 worldPos)
+    Vector3 CubeCoordinatesFromWorldPosition(Vector2 worldPos)
     {
         float x = (worldPos.x * Mathf.Sqrt(3f) / 3f - worldPos.y / 3f) / tileSize;
         float z = worldPos.y * 2f / 3f / tileSize;
@@ -173,7 +188,7 @@ public class HexGrid : MonoBehaviour
 
     TileCoord GetTileCoordinateFromWorldPosition(Vector2 worldPos)
     {
-        Vector3 cubeCoordinates = CubeCoordinatesFromMousePosition(worldPos);
+        Vector3 cubeCoordinates = CubeCoordinatesFromWorldPosition(worldPos);
 
         float x = cubeCoordinates.x;
         float y = cubeCoordinates.y;
@@ -205,7 +220,7 @@ public class HexGrid : MonoBehaviour
         clickPos -= transform.position;
         TileCoord coord = GetTileCoordinateFromWorldPosition(clickPos);
 
-        if (coord.x >= 0 && coord.y >= 0 && coord.x < xDimensions && coord.y < yDimensions)
+        if (coord.x >= 0 && coord.y >= 0 && coord.x < gridWidthInHexes && coord.y < gridHeightInHexes)
             m_grid[coord.x, coord.y].m_type = TileType.STONE;
 
         Debug.Log("GridPos: ");
@@ -213,6 +228,7 @@ public class HexGrid : MonoBehaviour
         Debug.Log("ClickPos: ");
         Debug.Log(clickPos);
 
+        
         DrawOutlineHex(m_grid[coord.x, coord.y].m_worldCenterPos, 2f, 1f);
         //Debug.Log(clickPos);
         //Debug.Log(new Vector2(coord.x, coord.y));
@@ -220,23 +236,83 @@ public class HexGrid : MonoBehaviour
 
     void Update()
     {
-        if (Input.GetMouseButton(0))
-            OnMouseDown();
+        m_outline.Draw3DAuto();
+        //Why does the outline not move w/camera
 
-        for (int x = 0; x < xDimensions; ++x)
+        //Show border on all hexes, thicker one on one selected
+        //Add some solid hexes, do Dj. algorithm
+
+        Vector2 cameraOffset = new Vector2(((gridWidthInHexes / 2f) * m_hexWidth) - (m_hexWidth / 2f), ((gridHeightInHexes / 2f) * m_hexHeight) - m_hexHeight);
+        GameObject camera = GameObject.FindGameObjectWithTag("MainCamera") as GameObject;
+        Camera c = camera.GetComponent<Camera>() as Camera;
+       // VectorLine.SetCamera3D(camera);
+        c.transform.position = new Vector3(cameraOffset.x, cameraOffset.y, -10f);
+        c.transform.position += new Vector3(Mathf.Cos(Time.realtimeSinceStartup), Mathf.Sin(Time.realtimeSinceStartup), 0f);
+
+        if (Input.GetMouseButton(0))
+             OnMouseDown();
+
+        for (int x = 0; x < gridWidthInHexes; ++x)
+         {
+             for (int y = 0; y < gridHeightInHexes; ++y)
+             {
+                 HexTile ht = m_grid[x, y];
+                MakeHexWithIndex(ht, (gridWidthInHexes * y) + x);
+             }
+         }
+ 
+         m_hexMesh.vertices = m_vertices;
+         m_hexMesh.triangles = m_indices;
+         m_hexMesh.colors = m_colors;
+ 
+         m_hexMesh.RecalculateBounds();
+    }
+
+    public List<HexTile> GetNeighbors(HexTile currentHexTile)
+    {
+        Vector3 cubeCoords = CubeCoordinatesFromWorldPosition(currentHexTile.m_worldCenterPos);
+        TileCoord tileCoord = TileCoordFromCubeCoordinate((int)cubeCoords.x, (int)cubeCoords.x, (int)cubeCoords.z);
+
+        int parity = tileCoord.y & 1;
+
+        List<HexTile> neighbors = new List<HexTile>();
+
+        for (int idx = directions.GetLowerBound(parity); idx < directions.GetUpperBound(parity); idx++)
         {
-            for (int y = 0; y < yDimensions; ++y)
+            TileCoord thisDir = directions[parity, idx];
+            TileCoord targetDir = new TileCoord(thisDir.x + tileCoord.x, tileCoord.y + thisDir.y);
+
+            if (targetDir.x < gridWidthInHexes && targetDir.y < gridHeightInHexes)
             {
-                HexTile ht = m_grid[x, y];
-               MakeHexWithIndex(ht, (xDimensions * y) + x);
+                neighbors.Add(m_grid[targetDir.x, targetDir.y]);
+
             }
         }
 
-        m_hexMesh.vertices = m_vertices;
-        m_hexMesh.triangles = m_indices;
-        m_hexMesh.colors = m_colors;
-
-        m_hexMesh.RecalculateBounds();
+        return neighbors;
     }
+
+    public int GetCost(HexTile from, HexTile to)
+    {
+       // Vector3 fromCubeCoords = CubeCoordinatesFromWorldPosition(from.m_worldCenterPos);
+       // TileCoord fromTileCoord = TileCoordFromCubeCoordinate((int)fromCubeCoords.x, (int)fromCubeCoords.x, (int)fromCubeCoords.z);
+
+        Vector3 toCubeCoords = CubeCoordinatesFromWorldPosition(from.m_worldCenterPos);
+        TileCoord toTileCoord = TileCoordFromCubeCoordinate((int)toCubeCoords.x, (int)toCubeCoords.x, (int)toCubeCoords.z);
+
+        if (toTileCoord.x < gridWidthInHexes && toTileCoord.y < gridHeightInHexes)
+        {
+            int tileX = toTileCoord.x;
+            int tileY = toTileCoord.y;
+            HexTile tileAt = m_grid[tileX, tileY];
+            TileDefinition thisTileDef = m_tileDefinitions[tileAt.m_type];
+            return thisTileDef.m_movementCost;
+        }
+        else
+        {
+            return int.MaxValue;
+        }
+    }
+
 }
    
