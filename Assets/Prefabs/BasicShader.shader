@@ -2,6 +2,7 @@
 	Properties{
 	}
 	SubShader{
+		Blend SrcAlpha OneMinusSrcAlpha
 		Pass{
 		ColorMaterial AmbientAndDiffuse
 	}

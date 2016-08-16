@@ -328,7 +328,6 @@ namespace Priority_Queue
                 throw new InvalidOperationException("Cannot call UpdatePriority() on a node which is not enqueued: " + node);
             }
             #endif
-
             node.Priority = priority;
             OnNodeUpdated(node);
         }

@@ -16,13 +16,33 @@ public class TileDefinition
     public TileDefinition()
     {
         m_renderColor = Color.black;
+        m_movementColor = m_renderColor;
+        m_movementColor.a = .5f;
+        m_attackRangeColor = Color.gray;
+        m_attackShapeColor = Color.yellow;
         m_isSolid = false;
         m_movementCost = 1;
     }
 
     public Color m_renderColor;
+    public Color m_movementColor;
+    public Color m_attackRangeColor;
+    public Color m_attackShapeColor;
     public bool m_isSolid;
     public int m_movementCost;
+}
+
+public class TeamDefinition
+{
+    public TeamDefinition()
+    {
+        m_name = "team";
+        m_color = Color.blue;
+        m_number = 999;
+    }
+    public Color m_color;
+    public string m_name;
+    public int m_number;
 }
 
 public struct Vertex
@@ -32,19 +52,29 @@ public struct Vertex
     public int m_index;
 }
 
-public struct HexTile
+public class HexTile : FastPriorityQueueNode
 {
-    public HexTile(Vector2 pos)
+    public double GetDistance()
+    {
+        return -1 * (Priority - double.MaxValue);
+    }
+
+    public HexTile(TileCoord coord, Vector2 pos, HexResource resource = null)
     {
         m_worldCenterPos = pos;
         m_type = TileType.LAND;
         m_unit = null;
+        m_resource = resource;
+        m_tileCoord = coord;
     }
 
     public Vector2 m_worldCenterPos;
+    public TileCoord m_tileCoord;
     //TODO: Properties
     public TileType m_type;
     public Unit m_unit;
+    public HexResource m_resource = null;
+    public ColorType m_currentColor = ColorType.RENDER;
 }
 
 public class GridNode : FastPriorityQueueNode
@@ -56,6 +86,13 @@ public class GridNode : FastPriorityQueueNode
     }
 }
 
+public enum ColorType
+{
+    RENDER,
+    MOVEMENT,
+    ATTACKRANGE,
+    ATTACKSHAPE
+}
 
 enum Direction
 {
@@ -65,6 +102,25 @@ enum Direction
     SOUTHEAST,
     SOUTHWEST,
     WEST
+}
+
+public enum Shape
+{
+    TRIANGLE,
+    SQUARE
+}
+
+//The exact sub class of the unit
+public enum UnitIdentity
+{
+    ARTILLERY,
+    RUINER,
+    MINELAYER,
+    SNIPER,
+    SHOCKTROOPER,
+    ENGINEER,
+    SCOUT,
+    DESTROYER
 }
 
 public struct TileCoord
@@ -78,7 +134,7 @@ public struct TileCoord
 
     public static bool operator ==(TileCoord a, TileCoord b)
     {
-        if (a.x == b.x && a.x == a.y)
+        if (a.x == b.x && a.y == b.y)
             return true;
         return false;
     }

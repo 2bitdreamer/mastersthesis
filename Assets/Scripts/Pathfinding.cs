@@ -5,67 +5,75 @@ using System.Collections.Generic;
 
 
 public class Pathfinding : MonoBehaviour
- {
+{
+    private TileCoord m_start = new TileCoord(0,0);
     private HexGrid m_hexGridRef;
-    FastPriorityQueue<GridNode> m_frontier;
 
-
-    void Initialize()
+    void Start()
     {
         m_hexGridRef = GameObject.FindGameObjectWithTag("HexGrid").GetComponent<HexGrid>();
     }
 
-    void DijkstraSearch(TileCoord start, TileCoord goal)
+    public PathingInfo DijkstraSearch(TileCoord start)
     {
-        HexTile tileAtStart = m_hexGridRef.m_grid[start.x, start.y];
-        HexTile goalTile = m_hexGridRef.m_grid[goal.x, goal.y];
+        FastPriorityQueue<HexTile> frontier = new FastPriorityQueue<HexTile>(200);
+        HexTile nodeAtStart = m_hexGridRef.m_grid[start.x, start.y];
 
-        GridNode nodeAtStart = new GridNode(tileAtStart);
-        m_frontier.Enqueue(nodeAtStart, 0);
+        FastPriorityQueue<HexTile> unvistedNodes = new FastPriorityQueue<HexTile>(200);
+        int len = m_hexGridRef.m_grid.GetLength(0);
+        int width = m_hexGridRef.m_grid.GetLength(1);
 
-        Dictionary<GridNode, GridNode> cameFrom = new Dictionary<GridNode, GridNode>();
-        Dictionary<GridNode, int> costSoFar = new Dictionary<GridNode, int>();
+        for (int i = 0; i < len; i++)
+        {
+            for (int j = 0; j < width; j++)
+            {
+                unvistedNodes.Enqueue(m_hexGridRef.m_grid[i, j], double.MaxValue);
+            }
+        }
+        unvistedNodes.UpdatePriority(nodeAtStart, 0);
+
+        Dictionary<HexTile, HexTile> cameFrom = new Dictionary<HexTile, HexTile>();
 
         cameFrom[nodeAtStart] = null;
-        costSoFar[nodeAtStart] = 0;
 
-        while (m_frontier.Count > 0)
+        while (unvistedNodes.Count > 0)
         {
-            GridNode current = m_frontier.Dequeue();
-            HexTile currentHexTile = current.m_hexTile;
-
-            if (currentHexTile.m_worldCenterPos == goalTile.m_worldCenterPos)
-                break;
+            HexTile currentHexTile = unvistedNodes.Dequeue();
+            frontier.Enqueue(currentHexTile, currentHexTile.Priority);
 
             List<HexTile> neighbors = m_hexGridRef.GetNeighbors(currentHexTile);
-            foreach(HexTile h in neighbors)
+            foreach (HexTile h in neighbors)
             {
-                int newCost = costSoFar[current] + m_hexGridRef.GetCost(currentHexTile, h);
+
+                if (!(frontier.Contains(h)) && !(m_hexGridRef.GetTileDefinition(h.m_type).m_isSolid)
+                    && ((h.m_unit == null) || (h.m_unit.m_team == nodeAtStart.m_unit.m_team)))
+                {
+                    double oldCost = h.Priority;
+                    double newCost = currentHexTile.Priority + m_hexGridRef.GetCost(currentHexTile, h);
+                    if (newCost < oldCost)
+                    {
+                        cameFrom[h] = currentHexTile;
+                        unvistedNodes.UpdatePriority(h, newCost);
+                    }
+                }
             }
- 
         }
+
+        return new PathingInfo(frontier, cameFrom);
     }
-
-    /*
-    frontier = PriorityQueue()
-frontier.put(start, 0)
-came_from = {}
-cost_so_far = {}
-came_from[start] = None
-cost_so_far[start] = 0
-
-while not frontier.empty():
-   current = frontier.get()
-
-   if current == goal:
-      break
-   
-   for next in graph.neighbors(current):
-      new_cost = cost_so_far[current] + graph.cost(current, next)
-      if next not in cost_so_far or new_cost < cost_so_far[next]:
-         cost_so_far[next] = new_cost
-         priority = new_cost
-         frontier.put(next, priority)
-         came_from[next] = current
-    */
 }
+
+
+public class PathingInfo
+{
+
+    public FastPriorityQueue<HexTile> m_orderedHexTiles;
+    public Dictionary<HexTile, HexTile> m_cameFrom;
+    public PathingInfo (FastPriorityQueue<HexTile> orderedHexTiles, Dictionary<HexTile, HexTile> cameFrom)
+    {
+        m_orderedHexTiles = orderedHexTiles;
+        m_cameFrom = cameFrom;
+    }
+}
+
+
