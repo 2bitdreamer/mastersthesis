@@ -516,6 +516,7 @@ public class HexGrid : MonoBehaviour
                 }
             }
         }
+
         if(unitWasSelected)
         {
             foreach (HexTile t in m_grid)
@@ -528,8 +529,10 @@ public class HexGrid : MonoBehaviour
 
     void OnLeftMouseUp()
     {
+        //Is mouse over a UI element
         if (EventSystem.current.IsPointerOverGameObject())
             return;
+
         Vector3 clickPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         clickPos -= transform.position;
         TileCoord coord = GetTileCoordinateFromWorldPosition(clickPos);

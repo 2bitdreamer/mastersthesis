@@ -150,6 +150,7 @@ public class Unit : MonoBehaviour {
                     float distance = Mathf.Max(Mathf.Abs(c.x - attackCubeCord.x), Mathf.Abs(c.y - attackCubeCord.y), Mathf.Abs(c.z - attackCubeCord.z));
                     bool isInRange = (Mathf.Approximately(distance, m_attackRangeMin)) || (Mathf.Approximately(distance, m_attackRangeMax));
                     isInRange = isInRange || (distance >= m_attackRangeMin && distance <= m_attackRangeMax);
+
                     if (isInRange)
                     {
                         t.m_currentColor = ColorType.ATTACKRANGE;
@@ -184,6 +185,7 @@ public class Unit : MonoBehaviour {
         bool isInRange = (Mathf.Approximately(distance, m_attackRangeMin)) || (Mathf.Approximately(distance, m_attackRangeMax));
         isInRange = isInRange || (distance >= m_attackRangeMin && distance <= m_attackRangeMax);
         bool unitInRange = false;
+
         if (isInRange)
         {
             foreach(TileCoord ht in m_displacementsForShape)
@@ -208,6 +210,25 @@ public class Unit : MonoBehaviour {
             m_hexGridRef.HandleEndOfUnitsAction(this);
         }
     }
+
+    /*
+    public List<TileCoord> GenerateCircularDisplacements(int radius)
+    {
+        List<TileCoord> disps = new List<TileCoord>();
+        for (int x = -radius; x <= radius; x++)
+        {
+            for (int y = -radius; y <= radius; y++)
+            {
+                if (x == -radius && y == -radius)
+                    continue;
+                if (x == radius && y == radius)
+                    continue;
+                disps.Add(new TileCoord(x, y));
+            }
+        }
+        return disps;
+    }
+    */
 
     public void TakeDamage(int ap, int dmg)
     {
