@@ -41,6 +41,7 @@ public class Unit : MonoBehaviour {
     public bool m_hasSpecial;
     public string  m_specialAbilityName;
     public float m_operatingIncomeFraction;
+    public float m_retaliationDamageFraction;
 
     private HexGrid m_hexGridRef;
 
@@ -52,6 +53,7 @@ public class Unit : MonoBehaviour {
         m_operatingIncomeFraction = 1f;
         m_canAttackAfterMoving = true; //#TODO: wanted to make this an int, number of attacks after moving (to allow silly units), but nontrivial in current setup
         m_captureRatePerTurn = 1;
+        m_retaliationDamageFraction = 1f;
     }
 
     public void Initialize(Team team)
@@ -193,6 +195,7 @@ public class Unit : MonoBehaviour {
         m_operatingIncomeFraction = 0f;
         m_captureRatePerTurn = 0;
         m_canAttackAfterMoving = false;
+        m_retaliationDamageFraction = 0f;
 
         Initialize(team);
 
@@ -345,10 +348,7 @@ public class Unit : MonoBehaviour {
                 if (x >= 0 && x < m_hexGridRef.gridWidthInHexes && y >= 0 && y < m_hexGridRef.gridHeightInHexes)
                 {
                     HexTile t = grid[x, y];
-                    Vector3 c = m_hexGridRef.CubeCoordinatesFromWorldPosition(t.m_worldCenterPos);
-                    float distance = Mathf.Max(Mathf.Abs(c.x - attackCubeCord.x), Mathf.Abs(c.y - attackCubeCord.y), Mathf.Abs(c.z - attackCubeCord.z));
-                    bool isInRange = (Mathf.Approximately(distance, m_attackRangeMin)) || (Mathf.Approximately(distance, m_attackRangeMax));
-                    isInRange = isInRange || (distance >= m_attackRangeMin && distance <= m_attackRangeMax);
+                    bool isInRange = IsInRange(new TileCoord(x,y));
 
                     if (isInRange)
                     {
@@ -372,23 +372,24 @@ public class Unit : MonoBehaviour {
         m_tilesInRange.Clear();
     }
 
-    public bool IsInRange(Vector3 clickPos)
+    public bool IsInRange(TileCoord clickedCoord)
     {
-        Vector3 c = m_hexGridRef.CubeCoordinatesFromWorldPosition(clickPos);
+        HexTile hexTile = m_hexGridRef.m_grid[clickedCoord.x, clickedCoord.y];
+        Vector3 c = m_hexGridRef.CubeCoordinatesFromWorldPosition(hexTile.m_worldCenterPos);
+
         HexTile myTile = m_hexGridRef.m_grid[m_position.x, m_position.y];
         Vector3 c2 = m_hexGridRef.CubeCoordinatesFromWorldPosition(myTile.m_worldCenterPos);
 
-        float distance = Mathf.Max(Mathf.Abs(c.x - c2.x), Mathf.Abs(c.y - c2.y), Mathf.Abs(c.z - c2.z));
-        bool isInRange = (Mathf.Approximately(distance, m_attackRangeMin)) || (Mathf.Approximately(distance, m_attackRangeMax));
-        isInRange = isInRange || (distance >= m_attackRangeMin && distance <= m_attackRangeMax);
+        float cubeDistance = CubeDistance(c, c2);
+        bool isInRange = (Mathf.Approximately(cubeDistance, m_attackRangeMin)) || (Mathf.Approximately(cubeDistance, m_attackRangeMax));
+        isInRange = isInRange || (cubeDistance >= m_attackRangeMin && cubeDistance <= m_attackRangeMax);
         return isInRange;
     }
 
-    public void DoDamage(Vector3 clickPos)
+    public void DoDamage(TileCoord clickCoord)
     {
         HexTile[,] grid = m_hexGridRef.m_grid;
-        TileCoord clickCoord = m_hexGridRef.GetTileCoordinateFromWorldPosition(clickPos);
-        bool isInRange = IsInRange(clickPos);
+        bool isInRange = IsInRange(clickCoord);
         bool unitInRange = false;
 
         if (isInRange)
@@ -399,10 +400,14 @@ public class Unit : MonoBehaviour {
                 if (newCoord.x >= 0 && newCoord.y >= 0 && newCoord.x < m_hexGridRef.gridWidthInHexes && newCoord.y < m_hexGridRef.gridHeightInHexes)
                 {
                     Unit u = grid[newCoord.x, newCoord.y].m_unit;
-                    if (u != null)
+                    if (u != null)  
                     {
                         unitInRange = true;
-                        u.TakeDamage(m_armorPenetration, m_attackPower);
+                        int remainingHP = u.TakeDamage(m_armorPenetration, m_attackPower);
+                        if (remainingHP > 0)
+                        {
+                            CheckDefenderRetaliation(u, m_position);
+                        }
                     }
                 }
             }
@@ -439,19 +444,21 @@ public class Unit : MonoBehaviour {
     }
     */
 
-    public void TakeDamage(int ap, int dmg)
+    public int TakeDamage(int ap, int dmg)
     {
         TileType tileType = m_hexGridRef.m_grid[m_position.x, m_position.y].m_type;
         int terrainDefense = m_hexGridRef.m_tileDefinitions[tileType].m_defense;
         Debug.Log("Terrain mitigates damage by " + terrainDefense); 
 
-        m_hp -= Mathf.Max((dmg - Mathf.Max((m_defense + terrainDefense - ap), 0)), 1); //Change this to be more readable
+        int totalDamage = Mathf.Max((dmg - Mathf.Max((m_defense + terrainDefense - ap), 0)), 1); //Change this to be more readable
+        Debug.Log("Unit took " + totalDamage);
+        m_hp -= totalDamage;
 
         if(m_hp <= 0)
         {
             m_hexGridRef.m_grid[m_position.x, m_position.y].m_unit = null;
             m_hexGridRef.m_teams[m_team].RemoveUnit(this);
-            DestroyImmediate(this.gameObject);
+
             Team team = m_hexGridRef.m_teams[m_team];
             if (team.m_units.Count == 0)
             {
@@ -465,28 +472,39 @@ public class Unit : MonoBehaviour {
                         break;
                 }
             }
+
+            //m_hexGridRef.HandleEndOfUnitsAction(this);
+            Destroy(this.gameObject);
+            return 0;
         }
+        return m_hp;
     }
 
-    private void CheckDefenderRetaliation(Unit defender, Vector3 attackerPos)
+    private float CubeDistance(Vector3 a, Vector3 b)
+    {
+        return (Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) + Mathf.Abs(a.z - b.z)) / 2f;
+    }
+
+
+    private void CheckDefenderRetaliation(Unit defender, TileCoord attackerPos)
     {
         HexTile[,] grid = m_hexGridRef.m_grid;
-        TileCoord clickCoord = m_hexGridRef.GetTileCoordinateFromWorldPosition(attackerPos);
         bool isInRange = defender.IsInRange(attackerPos);
 
         if (isInRange)
         {
             foreach (TileCoord ht in m_displacementsForShape)
             {
-                TileCoord newCoord = new TileCoord(clickCoord.x + ht.x, clickCoord.y + ht.y);
+                TileCoord newCoord = new TileCoord(attackerPos.x + ht.x, attackerPos.y + ht.y);
                 if (newCoord.x >= 0 && newCoord.y >= 0 && newCoord.x < m_hexGridRef.gridWidthInHexes && newCoord.y < m_hexGridRef.gridHeightInHexes)
                 {
                     HexTile hexTileAt = grid[newCoord.x, newCoord.y];
                     Unit u = hexTileAt.m_unit;
                     if (u != null)
                     {
-                        u.TakeDamage(defender.m_armorPenetration, defender.m_attackPower);
-                        Debug.Log("Retaliation damage dealt!");
+                        int modifiedRetaliationDamage = Mathf.FloorToInt(defender.m_attackPower * defender.m_retaliationDamageFraction);
+                        u.TakeDamage(defender.m_armorPenetration, modifiedRetaliationDamage);
+                        Debug.Log("Retaliation damage dealt with a base power of " + modifiedRetaliationDamage);
                     }
                 }
             }
