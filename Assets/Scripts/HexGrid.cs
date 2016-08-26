@@ -25,6 +25,11 @@ public class HexGrid : MonoBehaviour
 
     public GameObject m_actionMenu;
     public GameObject m_specialText;
+    public GameObject m_buildMenu;
+    public GameObject m_gameOverMenu;
+    public GameObject m_startMenu;
+
+    public TileCoord m_buildTileCoord;
 
     public List<Team> m_teams;
     private List<HexResource> m_hexResources;
@@ -37,9 +42,11 @@ public class HexGrid : MonoBehaviour
     int[] m_indices;
     Color[] m_colors;
 
-    private float m_hexWidth;
-    private float m_hexHeight;
-    private Dictionary<TileType, TileDefinition> m_tileDefinitions;
+    public float m_hexWidth;
+    public float m_hexHeight;
+
+    public Dictionary<TileType, TileDefinition> m_tileDefinitions;
+    
     private int m_curTeam = 0;
     private int m_round = 0;
 
@@ -47,6 +54,10 @@ public class HexGrid : MonoBehaviour
 
     private const int VERTICES_PER_HEX = 7;
     private const int INDICES_PER_HEX = 18;
+
+    public static List<Unit> s_unitBlueprints;
+    public GameState m_gameState;
+    public float m_minimumMovementCost;
 
 
 
@@ -57,14 +68,6 @@ public class HexGrid : MonoBehaviour
       6,3,4,
       6,4,5,
       6,5,0
-    };
-
-
-    private static readonly TileCoord[,] directions = new TileCoord[2, 6] {
-   { new TileCoord(+1, 0), new TileCoord(+1, -1), new TileCoord(0, -1),
-     new TileCoord(-1, 0), new TileCoord(0, +1), new TileCoord(+1, +1) },
-   { new TileCoord(+1, 0), new TileCoord(0, -1), new TileCoord(-1, -1),
-     new TileCoord(-1, 0), new TileCoord(-1, +1), new TileCoord(0, +1)}
     };
 
     private static readonly TileCoord[] s_neighborDirections = new TileCoord[6] {
@@ -105,13 +108,35 @@ public class HexGrid : MonoBehaviour
 
     void Start()
     {
+        s_unitBlueprints = new List<Unit>();
+
+        Unit scoutBlueprint = GenerateBlueprintUnit(UnitIdentity.SCOUT);
+        scoutBlueprint.InitializeScout(new TileCoord(), new Team());
+        s_unitBlueprints.Add(scoutBlueprint);
+
+        Unit shockBlueprint = GenerateBlueprintUnit(UnitIdentity.SHOCKTROOPER);
+        shockBlueprint.InitializeShocktrooper(new TileCoord(), new Team());
+        s_unitBlueprints.Add(shockBlueprint);
+
+        Unit sniperBlueprint = GenerateBlueprintUnit(UnitIdentity.SNIPER);
+        sniperBlueprint.InitializeSniper(new TileCoord(), new Team());
+        s_unitBlueprints.Add(sniperBlueprint);
+
+
         m_actionMenu = GameObject.FindGameObjectWithTag("ActionMenu");
         m_specialText = GameObject.FindGameObjectWithTag("SpecialText");
         m_actionMenu.SetActive(false);
+        m_buildMenu = GameObject.FindGameObjectWithTag("BuildMenu");
+        m_buildMenu.SetActive(false);
+        m_gameOverMenu = GameObject.FindGameObjectWithTag("GameOverMenu");
+        m_gameOverMenu.SetActive(false);
+        m_startMenu = GameObject.FindGameObjectWithTag("Start Menu") as GameObject;
+
         m_selectedTileCoords = new TileCoord(-1, -1);
         m_hexMesh = new Mesh();
         m_grid = new HexTile[gridWidthInHexes, gridHeightInHexes];
         m_outlines = new VectorLine[gridWidthInHexes, gridHeightInHexes];
+        m_gameState = GameState.GAME_ONGOING;
 
         m_selectedOutline = new VectorLine("Hex Outline", new List<Vector3>(), 8f, LineType.Continuous);
         m_selectedOutline.color = new Color(.45f, .114f, .87f);
@@ -130,14 +155,35 @@ public class HexGrid : MonoBehaviour
         m_teams = new List<Team>();
         m_hexResources = new List<HexResource>();
 
-        Vector2 cameraOffset = new Vector2(((gridWidthInHexes / 2f) * m_hexWidth) - (m_hexWidth / 2f), ((gridHeightInHexes / 2f) * m_hexHeight) - m_hexHeight);
-        GameObject camera = GameObject.FindGameObjectWithTag("MainCamera") as GameObject;
-        Camera c = camera.GetComponent<Camera>() as Camera;
-        // VectorLine.SetCamera3D(camera);
-        c.transform.position = new Vector3(cameraOffset.x, cameraOffset.y, -10f);
-
         MeshFilter filter = GetComponent<MeshFilter>();
         filter.sharedMesh = m_hexMesh;
+
+
+        m_minimumMovementCost = 0.5f;
+
+        InitializeTerrainTypes();
+
+
+        HexResource.s_resourceMap = new Dictionary<ResourceType, ResourceData>();
+
+        ResourceData mineData = new ResourceData();
+        mineData.m_allowsConstruction = false;
+        mineData.m_resourceShape = Shape.SQUARE;
+        mineData.m_operatingBonus = 3;
+        mineData.m_owningBonus = 2;
+        mineData.m_pointsToOwn = 3;
+        mineData.m_resourceColor = new Color(.96f, .69f, .26f);
+        HexResource.s_resourceMap[ResourceType.MINE] = mineData;
+
+        ResourceData factoryData = new ResourceData();
+        factoryData.m_allowsConstruction = true;
+        factoryData.m_operatingBonus = 0;
+        factoryData.m_owningBonus = 0;
+        factoryData.m_pointsToOwn = 3;
+        factoryData.m_resourceColor = new Color(1f, 1f, 1f);
+        factoryData.m_resourceShape = Shape.TRIANGLE;
+        HexResource.s_resourceMap[ResourceType.FACTORY] = factoryData;
+
 
         //point cloud -- biggest/smallest x and biggest/smallest y used to frame camera
         for (int x = 0; x < gridWidthInHexes; ++x)
@@ -161,47 +207,13 @@ public class HexGrid : MonoBehaviour
         }
 
         Color goldResourceColor = new Color(.96f, .69f, .26f);
-        GenerateResource(m_grid[0, 0], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[1, 1], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[2, 2], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[3, 3], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[4, 4], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[5, 5], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[6, 6], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[7, 7], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[8, 8], goldResourceColor, Shape.SQUARE, 3, 2, 1);
-        GenerateResource(m_grid[9, 9], goldResourceColor, Shape.SQUARE, 3, 2, 1);
+        GenerateResource(m_grid[0, 0], ResourceType.MINE);
+        GenerateResource(m_grid[1, 1], ResourceType.MINE);
 
         //"factory"                     
-        GenerateResource(m_grid[0, 9], goldResourceColor, Shape.TRIANGLE, 3, 2, 1);
+        GenerateResource(m_grid[0, 9], ResourceType.FACTORY);
 
-        m_tileDefinitions = new Dictionary<TileType, TileDefinition>();
-
-        TileDefinition waterTile = new TileDefinition();
-        waterTile.m_renderColor = new Color(.24f, .404f, .906f);
-        waterTile.m_movementColor = new Color(.24f, .404f, .906f, .5f);
-        waterTile.m_attackRangeColor = new Color(.827f, .235f, .906f);
-        waterTile.m_attackShapeColor = new Color(.467f, .933f, .807f);
-        waterTile.m_isSolid = false;
-        waterTile.m_movementCost = 2;
-        m_tileDefinitions.Add(TileType.WATER, waterTile);
-
-        TileDefinition stoneTile = new TileDefinition();
-        stoneTile.m_renderColor = new Color(.67f, .71f, .74f);
-        stoneTile.m_movementColor = new Color(.67f, .71f, .74f, .5f);
-        stoneTile.m_attackRangeColor = new Color(.803f, .576f, .643f);
-        stoneTile.m_attackShapeColor = new Color(.863f, .89f, .71f);
-        stoneTile.m_isSolid = true;
-        stoneTile.m_movementCost = int.MaxValue;
-        m_tileDefinitions.Add(TileType.STONE, stoneTile);
-
-        TileDefinition landTile = new TileDefinition();
-        landTile.m_isSolid = false;
-        landTile.m_renderColor = new Color(.49f, .65f, .25f);
-        landTile.m_movementColor = new Color(.49f, .65f, .25f, .5f);
-        landTile.m_attackRangeColor = new Color(.647f, .373f, .251f);
-        landTile.m_attackShapeColor = new Color(.725f, .847f, .055f);
-        m_tileDefinitions.Add(TileType.LAND, landTile);
+       
 
         Team team0 = new Team();
         Color blueColor = new Color(.68f, 1f, 1f);
@@ -221,21 +233,12 @@ public class HexGrid : MonoBehaviour
         SpawnUnit(new TileCoord(9, 9), 4, '@', 1,1,1,1,1,1,1,1,1);
         SpawnUnit(new TileCoord(8, 9), 4, '@', 1,1,1,1,1,1,1,1,1);*/
 
-        SpawnUnit(new TileCoord(0, 0), 0, UnitIdentity.SCOUT);
-        SpawnUnit(new TileCoord(1, 0), 0, UnitIdentity.SCOUT);
-        SpawnUnit(new TileCoord(2, 0), 0, UnitIdentity.SHOCKTROOPER);
-        SpawnUnit(new TileCoord(3, 0), 0, UnitIdentity.SNIPER);
 
-        SpawnUnit(new TileCoord(9, 9), 1, UnitIdentity.SCOUT);
-        SpawnUnit(new TileCoord(8, 9), 1, UnitIdentity.SCOUT);
-        SpawnUnit(new TileCoord(7, 9), 1, UnitIdentity.SHOCKTROOPER);
-        SpawnUnit(new TileCoord(6, 9), 1, UnitIdentity.SNIPER);
-
+        SpawnUnits();
         CheckIfSpawnedOnResource();
         DimInactiveUnits();
         if (m_teams[m_curTeam].m_getIncomeAtStart)
             m_teams[m_curTeam].RecieveIncome();
-        UpdateUIText();
 
         //m_outline.rectTransform.position = transform.position;
 
@@ -245,45 +248,210 @@ public class HexGrid : MonoBehaviour
         {
             vl.Draw3DAuto();
         }
+
+        SetupCamera();
+        UpdateUIText();
+}
+
+
+    public void SpawnUnits()
+    {
+        SpawnUnit(new TileCoord(0, 0), 0, UnitIdentity.SCOUT);
+        SpawnUnit(new TileCoord(1, 0), 0, UnitIdentity.SCOUT);
+        SpawnUnit(new TileCoord(2, 0), 0, UnitIdentity.SHOCKTROOPER);
+        SpawnUnit(new TileCoord(3, 0), 0, UnitIdentity.SNIPER);
+
+        SpawnUnit(new TileCoord(9, 9), 1, UnitIdentity.SCOUT);
+        SpawnUnit(new TileCoord(8, 9), 1, UnitIdentity.SCOUT);
+        SpawnUnit(new TileCoord(7, 9), 1, UnitIdentity.SHOCKTROOPER);
+        SpawnUnit(new TileCoord(6, 9), 1, UnitIdentity.SNIPER);
     }
 
-    void GenerateResource(HexTile ht, Color color, Shape shape, int pointsToOwn, int owningBonus, int operatingBonus)
+    public void SetupCamera()
+    {
+        float camx = m_grid[gridWidthInHexes - 1, gridHeightInHexes - 1].m_worldCenterPos.x - m_grid[0, 0].m_worldCenterPos.x;
+        float camy = m_grid[gridWidthInHexes - 1, gridHeightInHexes - 1].m_worldCenterPos.y - m_grid[0, 0].m_worldCenterPos.y;
+        //float camy = (gridHeightInHexes / 2.5f) * m_hexHeight - (m_hexHeight / 2f);
+        Vector2 cameraOffset = new Vector2(camx / 2f, (camy / 2f) + (m_hexHeight));
+
+        GameObject camera = GameObject.FindGameObjectWithTag("MainCamera") as GameObject;
+        Camera c = camera.GetComponent<Camera>() as Camera;
+        // VectorLine.SetCamera3D(camera);
+        c.transform.position = new Vector3(cameraOffset.x, cameraOffset.y, -10f);
+
+        CameraController cc = c.GetComponent<CameraController>();
+        cc.m_resetCamera = c.transform.position;
+        c.orthographicSize = (m_hexHeight * gridHeightInHexes) / 2f - (m_hexHeight / 2f);
+        cc.m_defaultScale = c.orthographicSize;
+    }
+
+    public void InitializeTerrainTypes()
+    {
+        m_tileDefinitions = new Dictionary<TileType, TileDefinition>();
+
+        TileDefinition landTile = new TileDefinition();
+        landTile.m_isSolid = false;
+        landTile.m_renderColor = new Color(.49f, .65f, .25f);
+        landTile.m_defense = 0;
+        landTile.m_movementColor = new Color(.49f, .65f, .25f, .5f);
+        landTile.m_attackRangeColor = new Color(.647f, .373f, .251f);
+        landTile.m_attackShapeColor = new Color(.725f, .847f, .055f);
+        m_tileDefinitions.Add(TileType.LAND, landTile);
+
+        TileDefinition waterTile = new TileDefinition();
+        waterTile.m_renderColor = new Color(.24f, .404f, .906f);
+        waterTile.m_movementColor = new Color(.24f, .404f, .906f, .5f);
+        waterTile.m_attackRangeColor = new Color(.827f, .235f, .906f);
+        waterTile.m_attackShapeColor = new Color(.467f, .933f, .807f);
+        waterTile.m_defense = -1;
+        waterTile.m_isSolid = false;
+        waterTile.m_movementCost = 3f;
+        m_tileDefinitions.Add(TileType.WATER, waterTile);
+
+        TileDefinition stoneTile = new TileDefinition();
+        stoneTile.m_renderColor = new Color(.67f, .71f, .74f);
+        stoneTile.m_movementColor = new Color(.67f, .71f, .74f, .5f);
+        stoneTile.m_attackRangeColor = new Color(.803f, .576f, .643f);
+        stoneTile.m_attackShapeColor = new Color(.863f, .89f, .71f);
+        stoneTile.m_isSolid = true;
+        stoneTile.m_movementCost = float.MaxValue;
+        m_tileDefinitions.Add(TileType.STONE, stoneTile);
+        
+        TileDefinition forestTile = new TileDefinition();
+        forestTile.m_isSolid = false;
+        forestTile.m_renderColor = new Color(.16f, .27f, .016f);
+        forestTile.m_defense = 1;
+        forestTile.m_movementCost = 2f;
+        forestTile.m_attackRangeColor = new Color(.5f, .1f, .1f);
+        forestTile.m_attackShapeColor = new Color(.8f, .3f, .3f);
+        m_tileDefinitions.Add(TileType.FOREST, forestTile);
+
+        TileDefinition roadTile = new TileDefinition();
+        roadTile.m_isSolid = false;
+        roadTile.m_renderColor = new Color(.949f, .886f, .749f);
+        roadTile.m_defense = 0;
+        roadTile.m_movementCost = 0.5f;
+        roadTile.m_attackRangeColor = new Color(.7f, .8f, .7f);
+        roadTile.m_attackShapeColor = new Color(.3f, .4f, .3f);
+        m_tileDefinitions.Add(TileType.ROAD, roadTile);
+
+        TileDefinition mountainTile = new TileDefinition();
+        mountainTile.m_isSolid = false;
+        mountainTile.m_renderColor = new Color(.459f, .259f, .055f);
+        mountainTile.m_defense = 2;
+        mountainTile.m_movementCost = 3f;
+        mountainTile.m_attackRangeColor = new Color(.5f, .5f, .5f);
+        mountainTile.m_attackShapeColor = new Color(.8f, .4f, .4f);
+        m_tileDefinitions.Add(TileType.MOUNTAINS, mountainTile);
+
+
+    }
+
+    public void SetUpPlayMode(int button)
+    {
+        GameObject startMenu = GameObject.FindGameObjectWithTag("Start Menu") as GameObject;
+        startMenu.SetActive(false);
+
+        switch (button)
+        {
+            case 0:
+                Debug.Log("pvp");
+                m_teams[0].m_isAI = false;
+                m_teams[1].m_isAI = false;
+                break;
+            case 1:
+                Debug.Log("pva");
+                m_teams[0].m_isAI = false;
+                m_teams[1].m_isAI = true;
+                break;
+            case 2:
+                Debug.Log("ava");
+                m_teams[0].m_isAI = true;
+                m_teams[1].m_isAI = true;
+                StartTurn();
+                break;
+        }
+    }
+
+    void GenerateResource(HexTile ht, ResourceType rt)
     {
         GameObject g = Instantiate(m_resourcePref, new Vector3(0f, 0f, -.1f), Quaternion.identity) as GameObject;
         HexResource hr = g.GetComponent<HexResource>();
-        hr.Initialize(ht.m_worldCenterPos, color, shape, pointsToOwn, owningBonus, operatingBonus, ht);
+        hr.Initialize(ht, rt);
         ht.m_resource = hr;
         m_hexResources.Add(hr);
     }
 
-    void SpawnUnit(TileCoord tc, int teamNumber, UnitIdentity unitName)
+    void SpawnUnit(TileCoord tc, int teamNumber, UnitIdentity unitName, bool incurCosts=false)
     {
+
         GameObject g = Instantiate(m_unitPref, m_grid[tc.x, tc.y].m_worldCenterPos, Quaternion.identity) as GameObject;
-        Unit u = null;
+        Unit u = g.AddComponent<Unit>();
         Team team = m_teams[teamNumber];
 
         switch (unitName)
         {
             case UnitIdentity.SCOUT:
-                u = g.AddComponent<Scout>();
-                Scout scout = u as Scout;
-                scout.Initialize(tc, m_teams[teamNumber]);
+                u.InitializeScout(tc, team);
                 break;
             case UnitIdentity.SHOCKTROOPER:
-                u = g.AddComponent<ShockTrooper>();
-                ShockTrooper shock = u as ShockTrooper;
-                shock.Initialize(tc, m_teams[teamNumber]);
+                u.InitializeShocktrooper(tc, team);
                 break;
             case UnitIdentity.SNIPER:
-                u = g.AddComponent<Sniper>();
-                Sniper sniper = u as Sniper;
-                sniper.Initialize(tc, m_teams[teamNumber]);
+                u.InitializeSniper(tc, team);
+                break;
+            case UnitIdentity.ARTILLERY:
+                u.InitializeArtillery(tc, team);
+                break;
+            case UnitIdentity.TANK:
+                u.InitializeTank(tc, team);
                 break;
         }
 
+        if (incurCosts)
+        {
+            int cost = u.m_cost;
+            if (team.m_goldReserves >= cost)
+            {
+                team.m_goldReserves -= cost;
+            }
+            else
+            {
+                Destroy(u);
+                return;
+            }
+        }
+
+
         team.AddUnit(u);
         m_grid[tc.x, tc.y].m_unit = u;
+
     }
+
+
+    Unit GenerateBlueprintUnit(UnitIdentity unitName)
+    {
+        GameObject g = Instantiate(m_unitPref) as GameObject;
+        Unit u = g.AddComponent<Unit>();
+       // g.SetActive(false);
+
+        switch (unitName)
+        {
+            case UnitIdentity.SCOUT:
+                u.InitializeScout(new TileCoord(), new Team());
+                break;
+            case UnitIdentity.SHOCKTROOPER:
+                u.InitializeShocktrooper(new TileCoord(), new Team());
+                break;
+            case UnitIdentity.SNIPER:
+                u.InitializeSniper(new TileCoord(), new Team());
+                break;
+        }
+
+        return u;
+    }
+
+    
 
     void CheckIfSpawnedOnResource()
     {
@@ -295,7 +463,7 @@ public class HexGrid : MonoBehaviour
                 HexResource hr = m_grid[tc.x, tc.y].m_resource;
                 if (hr != null)
                 {
-                    m_teams[u.m_team].m_income += hr.m_operatingBonus;
+                    m_teams[u.m_team].m_income += (hr.m_operatingBonus * u.m_operatingIncomeFraction);
                 }
             }
         }
@@ -432,6 +600,7 @@ public class HexGrid : MonoBehaviour
     public TileCoord GetTileCoordinateFromWorldPosition(Vector2 worldPos)
     {
         TileCoord minTileCoord = new TileCoord(-1, -1);
+
         float minDist = float.MaxValue;
         for (int x = 0; x < gridWidthInHexes; x++)
         {
@@ -447,6 +616,19 @@ public class HexGrid : MonoBehaviour
                 }
             }
         }
+
+        /*
+        #TODO: Not quite pixel perfect
+        */
+        /*
+        Vector3 foundHexTilePos = m_grid[minTileCoord.x, minTileCoord.y].m_worldCenterPos;
+        if (minTileCoord.x == gridHeightInHexes - 1 || minTileCoord.y == gridHeightInHexes - 1 || minTileCoord.x == 0 || minTileCoord.y == 0)
+        {
+            if (((worldPos.x > (foundHexTilePos.x + m_hexWidth / 2f)) || (worldPos.y > foundHexTilePos.y + m_hexWidth / 2f)))
+                return new TileCoord(-1, -1);
+        }
+        */
+
         return minTileCoord;
     }
 
@@ -457,7 +639,7 @@ public class HexGrid : MonoBehaviour
         {
             TileType t = m_grid[m_selectedTileCoords.x, m_selectedTileCoords.y].m_type;
             int next = ((int)t) + 1;
-            if (next > 2)
+            if (next >= (int)TileType.NUM_TYPES)
                 next = 0;
             HexTile tile = m_grid[m_selectedTileCoords.x, m_selectedTileCoords.y];
             tile.m_type = (TileType)(next);
@@ -492,6 +674,7 @@ public class HexGrid : MonoBehaviour
 
     void OnRightMouseUp()
     {
+
         Vector3 clickPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         clickPos -= transform.position;
         TileCoord coord = GetTileCoordinateFromWorldPosition(clickPos);
@@ -501,7 +684,7 @@ public class HexGrid : MonoBehaviour
 
         bool unitWasSelected = false;
         foreach (Team t in m_teams)
-        { 
+        {
             foreach (Unit u in t.m_units)
             {
                 if (u.m_selected)
@@ -517,7 +700,7 @@ public class HexGrid : MonoBehaviour
             }
         }
 
-        if(unitWasSelected)
+        if (unitWasSelected)
         {
             foreach (HexTile t in m_grid)
             {
@@ -529,9 +712,6 @@ public class HexGrid : MonoBehaviour
 
     void OnLeftMouseUp()
     {
-        //Is mouse over a UI element
-        if (EventSystem.current.IsPointerOverGameObject())
-            return;
 
         Vector3 clickPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         clickPos -= transform.position;
@@ -542,7 +722,7 @@ public class HexGrid : MonoBehaviour
 
         Debug.Log("Click Info: " + coord.x + "," + coord.y + " " + clickPos);
 
-        
+
         bool drawOutline = true;
         //Debug.Log(clickPos);
         //Debug.Log(new Vector2(coord.x, coord.y));
@@ -574,14 +754,25 @@ public class HexGrid : MonoBehaviour
             }
         }
 
-        //A unit was selected, so calculate what tiles it can move to.
         if (unitClicked != null)
         {
             if (!(unitClicked.m_attemptingAttack))
             {
-                if (unitClicked == lastSelected && unitClicked.m_hasAction)
+                if((lastSelected != null) && lastSelected.m_attemptingAttack)
                 {
-                    if(unitClicked.m_movesRemaining == 0)
+                    lastSelected.m_tilesInRange.Clear(); ;
+                    lastSelected.m_attemptingAttack = false;
+                    m_unitAttemptingAttack = null;
+                
+                    foreach (HexTile t in m_grid)
+                    {
+                        t.m_currentColor = ColorType.RENDER;
+                    }
+
+            }
+            if (unitClicked == lastSelected && unitClicked.m_hasAction)
+                {
+                    if (unitClicked.m_movesRemaining == 0)
                         unitClicked.m_tilesInRange.Clear();
                     m_unitAttemptingAction = unitClicked;
                     unitClicked.ActionMenuOpened();
@@ -634,9 +825,10 @@ public class HexGrid : MonoBehaviour
         }
         //No unit was selected, so see if a unit was selected previously and if so move it to the clicked position if
         //that position is in it's movement range.
-        else if(lastSelected != null)
+
+        else if (lastSelected != null)
         {
-            if(lastSelected.m_attemptingAttack)
+            if (lastSelected.m_attemptingAttack)
             {
                 m_unitAttemptingAttack.DoDamage(clickPos);
                 lastSelected.m_attemptingAttack = false;
@@ -649,17 +841,18 @@ public class HexGrid : MonoBehaviour
 
             bool reachable = false;
             int distance = 999;
-           foreach(HexTile h in lastSelected.m_tilesInRange)
+
+            foreach (HexTile h in lastSelected.m_tilesInRange)
             {
                 TileCoord coord2 = GetTileCoordinateFromWorldPosition(h.m_worldCenterPos);
                 if ((coord2.x == coord.x) && (coord2.y == coord.y))
                 {
                     reachable = true;
-                    distance = (int) (h.Priority);
+                    distance = (int)(h.Priority);
                     break;
                 }
             }
-           if(reachable)
+            if (reachable)
             {
                 drawOutline = false;
                 m_selectedOutline.active = false;
@@ -671,21 +864,25 @@ public class HexGrid : MonoBehaviour
                 HexResource resource = ht.m_resource;
                 if (resource != null)
                 {
-                    m_teams[lastSelected.m_team].m_income -= resource.m_operatingBonus;
-                    UpdateUIText();
+                    m_teams[lastSelected.m_team].m_income -= (resource.m_operatingBonus * lastSelected.m_operatingIncomeFraction);
                 }
 
                 lastSelected.m_movesRemaining -= distance;
-                
+
                 lastSelected.Move(coord);
+
+                if (!lastSelected.m_canAttackAfterMoving)
+                {
+                    lastSelected.m_hasAction = false;
+                }
+
                 ht = m_grid[coord.x, coord.y];
                 ht.m_unit = lastSelected;
 
                 resource = ht.m_resource;
                 if (resource != null)
                 {
-                    m_teams[lastSelected.m_team].m_income += resource.m_operatingBonus;
-                    UpdateUIText();
+                    m_teams[lastSelected.m_team].m_income += (resource.m_operatingBonus * lastSelected.m_operatingIncomeFraction);
                 }
             }
             lastSelected.m_selected = false;
@@ -698,20 +895,31 @@ public class HexGrid : MonoBehaviour
             m_selectedTileCoords = coord;
             m_selectedOutline.active = true;
         }
-        
+
+        if (lastSelected != null && !lastSelected.m_hasAction && lastSelected.m_movesRemaining == 0)
+        {
+            HandleEndOfUnitsAction(lastSelected);
+        }
+
     }
 
-    public void HandleEndOfUnitsAction(Unit u)
+
+    public void DimUnit(Unit u)
     {
         Color c = u.m_textMesh.color;
         c.a = .5f;
         u.m_textMesh.color = c;
+    }
+
+    public void HandleEndOfUnitsAction(Unit u)
+    {
+        DimUnit(u);
 
         int team = u.m_team;
         bool unitsRemaining = false;
-        foreach(Unit u2 in m_teams[team].m_units)
+        foreach (Unit u2 in m_teams[team].m_units)
         {
-            if ((u2.m_team == team) && ((u2.m_movesRemaining > 0)||u2.m_hasAction))
+            if ((u2.m_team == team) && ((u2.m_movesRemaining > 0) || u2.m_hasAction))
             {
                 unitsRemaining = true;
                 break;
@@ -732,7 +940,7 @@ public class HexGrid : MonoBehaviour
     void DimInactiveUnits()
     {
         foreach (Team t in m_teams)
-        { 
+        {
             foreach (Unit u2 in t.m_units)
             {
                 if (u2.m_team != m_curTeam)
@@ -747,7 +955,7 @@ public class HexGrid : MonoBehaviour
         }
     }
 
-    void EndTurn()
+    public void EndTurn()
     {
         UpdateResourceOwningBonuses();
         int team = m_curTeam;
@@ -759,7 +967,7 @@ public class HexGrid : MonoBehaviour
         }
 
         foreach (Team t in m_teams)
-        { 
+        {
             foreach (Unit u2 in t.m_units)
             {
                 if (u2.m_team == m_curTeam)
@@ -803,13 +1011,13 @@ public class HexGrid : MonoBehaviour
                         if (unitOnTile.m_team == m_curTeam)
                         {
                             //the team ending their turn
-                            hr.m_pointsTowardsOwning += unitOnTile.m_pointsTowardsCapture;
-                            if (hr.m_pointsTowardsOwning >= hr.m_pointsToOwn)
+                            hr.m_pointsTowardsOwning += unitOnTile.m_captureRatePerTurn;
+                            if (hr.m_pointsTowardsOwning + unitOnTile.m_captureTurnReduction >= hr.m_pointsToOwn)
                             {
                                 hr.m_owningTeam = m_curTeam;
                                 m_teams[m_curTeam].m_income += hr.m_owningBonus;
                                 hr.m_teamWorkingTowardsOwning = -1;
-                                
+
                                 hr.Recolor(m_teams[m_curTeam].m_captureColor);
                             }
                         }
@@ -819,7 +1027,7 @@ public class HexGrid : MonoBehaviour
                         //a unit is on it and it is it's first turn working towards the goal
                         hr.m_teamWorkingTowardsOwning = unitOnTile.m_team;
                         if (unitOnTile.m_team == m_curTeam)
-                            hr.m_pointsTowardsOwning = unitOnTile.m_pointsTowardsCapture;
+                            hr.m_pointsTowardsOwning = unitOnTile.m_captureRatePerTurn;
                         else
                             hr.m_pointsTowardsOwning = 0;
                     }
@@ -831,7 +1039,7 @@ public class HexGrid : MonoBehaviour
                     hr.m_pointsTowardsOwning = 0;
                 }
             }
-            else if(unitOnTile != null && unitOnTile.m_team != hr.m_owningTeam)
+            else if (unitOnTile != null && unitOnTile.m_team != hr.m_owningTeam)
             {
                 //if there's a unit on it that is not the owning team
                 m_teams[hr.m_owningTeam].m_income -= hr.m_owningBonus;
@@ -839,7 +1047,7 @@ public class HexGrid : MonoBehaviour
                 hr.m_teamWorkingTowardsOwning = unitOnTile.m_team;
                 hr.Recolor(hr.m_baseColor);
                 if (unitOnTile.m_team == m_curTeam)
-                    hr.m_pointsTowardsOwning = unitOnTile.m_pointsTowardsCapture;
+                    hr.m_pointsTowardsOwning = unitOnTile.m_captureRatePerTurn;
                 else
                     hr.m_pointsTowardsOwning = 0;
 
@@ -849,46 +1057,55 @@ public class HexGrid : MonoBehaviour
 
     void StartTurn()
     {
-        
         if (m_round != 0)
         {
             m_teams[m_curTeam].RecieveIncome();
-            UpdateUIText();
-            foreach(Unit u in m_teams[m_curTeam].m_units)
+            foreach (Unit u in m_teams[m_curTeam].m_units)
             {
                 u.m_hasAction = true;
             }
         }
-        else if(m_teams[m_curTeam].m_getIncomeAtStart)
+        else if (m_teams[m_curTeam].m_getIncomeAtStart)
         {
             m_teams[m_curTeam].RecieveIncome();
-            UpdateUIText();
+        }
+
+        if (m_gameState != GameState.GAME_ONGOING)
+        {
+            HandleEndOfGame();
+        }
+
+        if(m_teams[m_curTeam].m_isAI)
+        {
+            m_teams[m_curTeam].DecideAIAction();
         }
     }
 
     void UpdateUIText()
     {
-        Team player = m_teams[0];
-        m_UIText.text = "<b>Your team: </b><color=#adffff>" + player.m_name +
-            " </color> <b>Income: </b><color=#adffff>" + player.m_income +
-            "</color> <b> Upkeep: </b><color=#adffff>" + player.m_upkeep +
-            "</color> <b> Reserves: </b><color=#adffff>" + player.m_incomeReserves +
-            "</color> <b> Active Team: </b>";
+        string colorText = "";
         switch (m_curTeam)
         {
             case 0:
-                m_UIText.text += "<color=#adffff>";
+                colorText = "<color=#adffff>";
                 break;
             case 1:
-                m_UIText.text += "<color=red>";
+                colorText  = "<color=red>";
                 break;
         }
-        m_UIText.text += m_teams[m_curTeam].m_name + "</color>";
+
+        Team team = m_teams[m_curTeam];
+        m_UIText.text = "<b>Active team: </b>" + colorText + "" + team.m_name +
+            " </color> <b>Income: </b>" + colorText + "" + team.m_income +
+            "</color> <b> Upkeep: </b>" + colorText + "" + team.m_upkeep +
+            "</color> <b> Reserves: </b>" + colorText + "" + team.m_goldReserves + "</color>";
     }
 
     void Update()
     {
-        if(m_unitAttemptingAttack != null)
+
+        UpdateUIText();
+        if (m_unitAttemptingAttack != null)
         {
             UpdateAttackShape();
         }
@@ -923,21 +1140,71 @@ public class HexGrid : MonoBehaviour
         if (coord.x < 0 || coord.y < 0 || coord.x >= gridWidthInHexes || coord.y >= gridHeightInHexes)
             return;
 
-        if (Input.GetMouseButtonUp(0))
-            OnLeftMouseUp();
-        else if (Input.GetMouseButtonUp(1))
-            OnRightMouseUp();
-        else if (Input.GetKeyUp(KeyCode.T))
-            OnTerraformKey();
-
-        if (Input.GetKeyDown(KeyCode.S))
-            SpawnTest();
-        else if (Input.GetKeyDown(KeyCode.K))
-            KillTest();
-        else if (Input.GetKeyDown(KeyCode.E))
-            EndTurn();
 
 
+        //Is mouse over not over a UI element or is AI's turn
+        if (!(EventSystem.current.IsPointerOverGameObject()) && !(m_teams[m_curTeam].m_isAI))
+        {
+            if (Input.GetMouseButtonUp(0))
+                OnLeftMouseUp();
+            else if (Input.GetMouseButtonUp(1))
+                OnRightMouseUp();
+            else if (Input.GetKeyUp(KeyCode.T))
+                OnTerraformKey();
+
+            if (Input.GetKeyDown(KeyCode.S))
+                SpawnTest();
+            else if (Input.GetKeyDown(KeyCode.K))
+                KillTest();
+            else if (Input.GetKeyDown(KeyCode.E))
+                EndTurn();
+            else if (Input.GetKeyDown(KeyCode.B))
+            {
+                HexTile t = m_grid[coord.x, coord.y];
+                if ((!t.m_unit) && t.m_resource && t.m_resource.m_resourceType == ResourceType.FACTORY && t.m_resource.m_owningTeam == m_curTeam)
+                {
+                    m_buildTileCoord = coord;
+                    OpenBuildMenu();
+                }
+
+            }
+            else if (Input.GetKeyDown(KeyCode.M))
+            {
+                m_gameState = GameState.PLAYER_ONE_WINS_ANNIHILATION;
+                HandleEndOfGame();
+            }
+
+        }
+        else
+        {
+            if (m_startMenu.activeSelf)
+            {
+                if (Input.GetKeyDown(KeyCode.Keypad0))
+                {
+                    SetUpPlayMode(0);
+                }
+                else if (Input.GetKeyDown(KeyCode.Keypad1))
+                {
+                    SetUpPlayMode(1);
+                }
+                else if (Input.GetKeyDown(KeyCode.Keypad2))
+                {
+                    SetUpPlayMode(2);
+                }
+            }
+        }
+
+
+    }
+
+       bool IsInRange(float distance)
+    {
+        bool isInRange = (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMin)) ||
+            (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMax));
+        isInRange = isInRange ||
+            (distance >= m_unitAttemptingAttack.m_attackRangeMin &&
+             distance <= m_unitAttemptingAttack.m_attackRangeMax);
+        return isInRange;
     }
 
     void UpdateAttackShape()
@@ -956,9 +1223,7 @@ public class HexGrid : MonoBehaviour
         Vector3 c1 = CubeCoordinatesFromWorldPosition(mousePos);
         Vector3 c2 = CubeCoordinatesFromWorldPosition(unitPos);
         float distance = Mathf.Max(Mathf.Abs(c1.x - c2.x), Mathf.Abs(c1.y - c2.y), Mathf.Abs(c1.z - c2.z));
-        bool isInRange = (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMin)) || (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMax));
-        isInRange = isInRange || (distance >= m_unitAttemptingAttack.m_attackRangeMin && distance <= m_unitAttemptingAttack.m_attackRangeMax);
-        if (isInRange)
+        if (IsInRange(distance))
         {
             if (m_previousTileAttackShapeWasDrawnOn.x != -1)
             {
@@ -971,9 +1236,7 @@ public class HexGrid : MonoBehaviour
                         Vector3 highlightPos = h.m_worldCenterPos;
                         c1 = CubeCoordinatesFromWorldPosition(highlightPos);
                         distance = Mathf.Max(Mathf.Abs(c1.x - c2.x), Mathf.Abs(c1.y - c2.y), Mathf.Abs(c1.z - c2.z));
-                        isInRange = (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMin)) || (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMax));
-                        isInRange = isInRange || (distance >= m_unitAttemptingAttack.m_attackRangeMin && distance <= m_unitAttemptingAttack.m_attackRangeMax);
-                        if (isInRange)
+                        if (IsInRange(distance))
                             h.m_currentColor = ColorType.ATTACKRANGE;
                         else
                             h.m_currentColor = ColorType.RENDER;
@@ -990,9 +1253,9 @@ public class HexGrid : MonoBehaviour
                     h.m_currentColor = ColorType.ATTACKSHAPE;
                 }
             }
-            
 
-            
+
+
             m_previousTileAttackShapeWasDrawnOn = mouseCoord;
 
         }
@@ -1019,7 +1282,7 @@ public class HexGrid : MonoBehaviour
             SpawnUnit(coord, 1, UnitIdentity.SCOUT);
         }
     }
-    
+
     void KillTest()
     {
         Vector3 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
@@ -1054,7 +1317,7 @@ public class HexGrid : MonoBehaviour
 
         List<HexTile> neighbors = new List<HexTile>();
 
-        for(int direction = 0; direction < 6; direction++)
+        for (int direction = 0; direction < 6; direction++)
         {
             TileCoord neighborCoords = GetNeighborInDirection(tileCoord, direction);
             if (IsInBounds(neighborCoords))
@@ -1065,7 +1328,12 @@ public class HexGrid : MonoBehaviour
         return neighbors;
     }
 
-    public int GetCost(HexTile from, HexTile to)
+    public bool IsRoughTerrain(HexTile t)
+    {
+        return t.m_type != TileType.ROAD && t.m_type != TileType.LAND;
+    }
+
+    public float GetCost(HexTile from, HexTile to, TileCoord unitPos)
     {
         //Vector3 toCubeCoords = CubeCoordinatesFromWorldPosition(from.m_worldCenterPos);
         //TileCoord toTileCoord = TileCoordFromCubeCoordinate((int)toCubeCoords.x, (int)toCubeCoords.x, (int)toCubeCoords.z);
@@ -1076,9 +1344,19 @@ public class HexGrid : MonoBehaviour
         {
             int tileX = toTileCoord.x;
             int tileY = toTileCoord.y;
-            HexTile tileAt = m_grid[tileX, tileY];
-            TileDefinition thisTileDef = m_tileDefinitions[tileAt.m_type];
-            return thisTileDef.m_movementCost;
+            HexTile tileAtNewPos = m_grid[tileX, tileY];
+            HexTile tileAtUnitPos = m_grid[unitPos.x, unitPos.y];
+
+            TileDefinition thisTileDef = m_tileDefinitions[tileAtNewPos.m_type];
+            float moveCost = thisTileDef.m_movementCost;
+
+            Unit unit = tileAtUnitPos.m_unit;
+            if (unit && IsRoughTerrain(tileAtNewPos))
+            {
+                moveCost = Mathf.Max(m_minimumMovementCost, unit.m_roughTerrainMovesModifier + moveCost);
+            }
+
+            return moveCost;
         }
         else
         {
@@ -1114,15 +1392,30 @@ public class HexGrid : MonoBehaviour
         ExitActionMenu();
     }
 
-    public void ExitPressed()
+    public void ExitPressed(int menuVal)
     {
-        ExitActionMenu();
+        if(menuVal == 0)
+            ExitActionMenu();
+        else if(menuVal == 1)
+            ExitBuildMenu();
+    }
+
+    public void OpenBuildMenu()
+    {
+        //Check if selected thing is a factory, if the current team owns it, and
+        //if no unit is on it. If all true:
+        m_buildMenu.SetActive(true);
     }
 
     public void ExitActionMenu()
     {
         m_actionMenu.SetActive(false);
         m_unitAttemptingAction = null;
+    }
+
+    public void ExitBuildMenu()
+    {
+        m_buildMenu.SetActive(false);
     }
 
     public TileCoord GetNeighborInDirection(TileCoord tileCoord, int direction)
@@ -1154,5 +1447,44 @@ public class HexGrid : MonoBehaviour
         return hexCenter;
     }
 
+    public void BuildUnit(int buttonPressed)
+    {
+        UnitIdentity id = (UnitIdentity)buttonPressed;
+        SpawnUnit(m_buildTileCoord, m_curTeam, id, true);
+        Team currentTeam = m_teams[m_curTeam];
+        Unit u = currentTeam.m_units[currentTeam.m_units.Count - 1];
+        u.m_hasAction = false;
+        u.m_hasAttacked = true;
+        u.m_hasSpecial = false;
+        u.m_movesRemaining = 0;
+        DimUnit(u);
+        Debug.Log(buttonPressed);
+        m_buildMenu.SetActive(false);
+    }
+
+    public void HandleEndOfGame()
+    {
+        m_gameOverMenu.SetActive(true);
+        Text gameOverText = GameObject.FindGameObjectWithTag("GameOverMenuText").GetComponent<Text>();
+
+
+        switch (m_gameState)
+        {
+            case GameState.PLAYER_ONE_WINS_ANNIHILATION:
+              gameOverText.text = "PLAYER ONE WINS BY ANNIHILATION";
+                break;
+            case GameState.PLAYER_TWO_WINS_ANNIHILATION:
+                gameOverText.text = "PLAYER TWO WINS BY ANNIHILATION";
+                break;
+            case GameState.PLAYER_ONE_WINS_BANKRUPTCY:
+                gameOverText.text = "PLAYER ONE WINS BY BANKRUPTCY";
+                break;
+            case GameState.PLAYER_TWO_WINS_BANKRUPTCY:
+                gameOverText.text = "PLAYER TWO WINS BY BANKRUPTCY";
+                break;
+        }
+        
+    }
+
 }
-   
+

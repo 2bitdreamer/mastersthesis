@@ -26,6 +26,6 @@ public class Scout : Unit {
         displacementsForShape.Add(new TileCoord(1, -1));
         displacementsForShape.Add(new TileCoord(0, -1));
 
-        Initialize(pos, 7, '!', team, 1f, 4, 2, 3, 1, 1, 1, 2, displacementsForShape);
+        //Initialize(pos, 7, '!', team, 1f, 4, 2, 3, 1, 1, 1, 2, displacementsForShape);
     }
 }

@@ -18,6 +18,6 @@ public class Sniper : Unit {
     {
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0));
-        Initialize(pos, 4, '>', team, 1f, 3, 1, 6, 3, 0, 4, 1, displacementsForShape);
+       // Initialize(pos, 4, '>', team, 1f, 3, 1, 6, 3, 0, 4, 1, displacementsForShape);
     }
 }

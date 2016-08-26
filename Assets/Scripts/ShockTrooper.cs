@@ -18,6 +18,6 @@ public class ShockTrooper : Unit {
     {
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0));
-        Initialize(pos, 5, '#', team, 1f, 5, 1, 2, 4, 2, 2, 1, displacementsForShape);
+        //Initialize(pos, 5, '#', team, 1f, 5, 1, 2, 4, 2, 2, 1, displacementsForShape);
     }
 }

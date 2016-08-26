@@ -16,10 +16,11 @@ public class Pathfinding : MonoBehaviour
 
     public PathingInfo DijkstraSearch(TileCoord start)
     {
-        FastPriorityQueue<HexTile> frontier = new FastPriorityQueue<HexTile>(200);
+        int maxQueueSize = m_hexGridRef.gridWidthInHexes * m_hexGridRef.gridHeightInHexes;
+        FastPriorityQueue<HexTile> frontier = new FastPriorityQueue<HexTile>(maxQueueSize);
         HexTile nodeAtStart = m_hexGridRef.m_grid[start.x, start.y];
 
-        FastPriorityQueue<HexTile> unvistedNodes = new FastPriorityQueue<HexTile>(200);
+        FastPriorityQueue<HexTile> unvistedNodes = new FastPriorityQueue<HexTile>(maxQueueSize);
         int len = m_hexGridRef.m_grid.GetLength(0);
         int width = m_hexGridRef.m_grid.GetLength(1);
 
@@ -49,7 +50,7 @@ public class Pathfinding : MonoBehaviour
                     && ((h.m_unit == null) || (h.m_unit.m_team == nodeAtStart.m_unit.m_team)))
                 {
                     double oldCost = h.Priority;
-                    double newCost = currentHexTile.Priority + m_hexGridRef.GetCost(currentHexTile, h);
+                    double newCost = currentHexTile.Priority + m_hexGridRef.GetCost(currentHexTile, h, start);
                     if (newCost < oldCost)
                     {
                         cameFrom[h] = currentHexTile;

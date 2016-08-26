@@ -3,21 +3,22 @@ using System.Collections;
 
 public class CameraController : MonoBehaviour
 {
-    private Vector3 m_resetCamera;
-    private Vector3 m_origin;
-    private Vector3 m_diference;
-    private bool m_drag = false;
-    private float m_defaultScale = 5f;
-    private float m_gridSize;
+   public Vector3 m_resetCamera;
+   public Vector3 m_origin;
+   public Vector3 m_diference;
+   public bool m_drag = false;
+   public float m_defaultScale = 5f;
+   public float m_gridSize;
 
-    public float m_speed = 5;
-    public float m_scrollSpeed = 150;
+    public float m_speed;
+    public float m_scrollSpeed = 1500;
 
     void Start()
     {
-        m_resetCamera = Camera.main.transform.position;
         HexGrid hexGrid = GameObject.FindGameObjectWithTag("HexGrid").GetComponent<HexGrid>();
         m_gridSize = (float)(Mathf.Max(hexGrid.gridHeightInHexes, hexGrid.gridWidthInHexes)) * hexGrid.TILE_SIZE;
+        m_speed = Screen.width * .07f;
+        //m_defaultScale = (hexGrid.m_hexHeight * hexGrid.gridHeightInHexes) / 2f;
     }
 
     void LateUpdate()

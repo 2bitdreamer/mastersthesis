@@ -8,6 +8,9 @@ public enum TileType
     LAND,
     WATER,
     STONE,
+    FOREST,
+    ROAD,
+    MOUNTAINS,
     NUM_TYPES
 }
 
@@ -21,7 +24,8 @@ public class TileDefinition
         m_attackRangeColor = Color.gray;
         m_attackShapeColor = Color.yellow;
         m_isSolid = false;
-        m_movementCost = 1;
+        m_movementCost = 1f;
+        m_defense = 0;
     }
 
     public Color m_renderColor;
@@ -29,7 +33,8 @@ public class TileDefinition
     public Color m_attackRangeColor;
     public Color m_attackShapeColor;
     public bool m_isSolid;
-    public int m_movementCost;
+    public float m_movementCost;
+    public int m_defense;
 }
 
 public class TeamDefinition
@@ -86,6 +91,16 @@ public class GridNode : FastPriorityQueueNode
     }
 }
 
+public enum GameState
+{
+    PLAYER_ONE_WINS_BANKRUPTCY,
+    PLAYER_TWO_WINS_BANKRUPTCY,
+    PLAYER_ONE_WINS_ANNIHILATION,
+    PLAYER_TWO_WINS_ANNIHILATION,
+    GAME_ONGOING,
+    NUM_STATES
+}
+
 public enum ColorType
 {
     RENDER,
@@ -113,23 +128,26 @@ public enum Shape
 //The exact sub class of the unit
 public enum UnitIdentity
 {
-    ARTILLERY,
-    RUINER,
-    MINELAYER,
-    SNIPER,
-    SHOCKTROOPER,
-    ENGINEER,
     SCOUT,
-    DESTROYER
+    SHOCKTROOPER,
+    SNIPER,
+    ARTILLERY,
+    TANK
 }
 
-public struct TileCoord
+public class TileCoord
 {
     public int x, y;
     public TileCoord(int xp, int yp)
     {
         x = xp;
         y = yp;
+    }
+
+    public TileCoord()
+    {
+        x = -1;
+        y = -1;
     }
 
     public static bool operator ==(TileCoord a, TileCoord b)
