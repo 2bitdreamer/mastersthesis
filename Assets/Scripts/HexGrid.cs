@@ -5,6 +5,8 @@ using Vectrosity;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using System.Collections;
+using System;
+using System.Reflection;
 
 public class HexGrid : MonoBehaviour
 {
@@ -106,12 +108,13 @@ public class HexGrid : MonoBehaviour
     };
 
 
+    void Awake()
+    {
+        CreateUnitBlueprints();
+    }
 
     void Start()
     {
-
-        CreateUnitBlueprints();
-
         m_actionMenu = GameObject.FindGameObjectWithTag("ActionMenu");
         m_specialText = GameObject.FindGameObjectWithTag("SpecialText");
         m_actionMenu.SetActive(false);
@@ -153,6 +156,10 @@ public class HexGrid : MonoBehaviour
         InitializeTerrainTypes();
         CreateResources();
 
+        GameObject ng = GameObject.FindGameObjectWithTag("NoiseGenerator");
+        TextureCreator tg = ng.GetComponent<TextureCreator>();
+        tg.GenerateLevelTexture();
+
 
         //point cloud -- biggest/smallest x and biggest/smallest y used to frame camera
         for (int x = 0; x < gridWidthInHexes; ++x)
@@ -163,8 +170,14 @@ public class HexGrid : MonoBehaviour
                 // Vector2 pos = new Vector2(Mathf.Sqrt(3f) * (x - .5f * isOdd), y * 3f / 2f) * tileSize;
                 Vector2 pos = CalculateHexCenter(x, y);
 
+                HexTile t = new HexTile(new TileCoord(x, y), pos);
+                int xTexel = Mathf.RoundToInt((x + 1) * (512f / gridWidthInHexes));
+                int yTexel = Mathf.RoundToInt((y + 1) * (512f / gridHeightInHexes));
+                Color pixelColor = tg.m_texture.GetPixel(xTexel, yTexel);
+                TileType tileType = PixelToTileType(pixelColor);
+                t.m_type = tileType;
+                m_grid[x, y] = t;
 
-                m_grid[x, y] = new HexTile(new TileCoord(x, y), pos);
                 VectorLine newVL = new VectorLine("Hex Outline" + x + "," + y, new List<Vector3>(), 5f, LineType.Continuous);
                 //Hex Outline Color
                 //newVL.color = new Color(.804f, .918f, .918f);
@@ -203,20 +216,120 @@ public class HexGrid : MonoBehaviour
         SetupCamera();
 
         InvokeRepeating("UpdateUIText", 0f, 0.5f); //If this is done every frame, crash happens. Why?
+
+
 }
 
+    static float GetDistanceBetweenColors(Color a, Color b)
+    {
 
+        float dR = a.r - b.r;
+        float dG = a.g - b.g;
+        float dB = a.b - b.b;
+
+        return Mathf.Sqrt((dR * dR) + (dG * dG) + (dB * dB));
+    }
+
+    static TileType PixelToTileType(Color source)
+    {
+        List<Color> palette = new List<Color>();
+        palette.Add(Color.green);
+        palette.Add(Color.red);
+        palette.Add(Color.white);
+        palette.Add(Color.cyan);
+        palette.Add(Color.blue);
+
+        // Store the current closest distance and colour:
+        float CurrentClosestDistance = float.MaxValue;
+        Color CurrentClosestColour = Color.black;
+
+        // Iterate over the possible matches, and check the distance each time.
+        foreach (Color c in palette)
+        {
+            float d = GetDistanceBetweenColors(source, c);
+            if (d < CurrentClosestDistance)
+            {
+                CurrentClosestDistance = d;
+                CurrentClosestColour = c;
+            }
+        }
+
+        TileType resultTerrain = TileType.STONE;
+
+        if (CurrentClosestColour == Color.green)
+        {
+            resultTerrain = TileType.FOREST;
+        }
+        else if (CurrentClosestColour == Color.red)
+        {
+            resultTerrain = TileType.LAND;
+        }
+        else if (CurrentClosestColour == Color.cyan)
+        {
+            resultTerrain = TileType.ROAD;
+        }
+        else if (CurrentClosestColour == Color.white)
+        {
+            resultTerrain = TileType.STONE;
+        }
+        else if (CurrentClosestColour == Color.blue)
+        {
+            resultTerrain = TileType.WATER;
+        }
+        return resultTerrain;
+    }
+
+
+    //Right now, creates one of each unit, excluding tank, and avoiding spawning on top of solid tiles
     public void SpawnUnits()
     {
-        SpawnUnit(new TileCoord(0, 0), 0, UnitIdentity.SCOUT);
-        SpawnUnit(new TileCoord(1, 0), 0, UnitIdentity.ARTILLERY);
-        SpawnUnit(new TileCoord(2, 0), 0, UnitIdentity.SHOCKTROOPER);
-        SpawnUnit(new TileCoord(3, 0), 0, UnitIdentity.SNIPER);
 
-        SpawnUnit(new TileCoord(9, 9), 1, UnitIdentity.SCOUT);
-        SpawnUnit(new TileCoord(8, 9), 1, UnitIdentity.ARTILLERY);
-        SpawnUnit(new TileCoord(7, 9), 1, UnitIdentity.SHOCKTROOPER);
-        SpawnUnit(new TileCoord(6, 9), 1, UnitIdentity.SNIPER);
+        int currentUnit = 0;
+
+        for (int y = 0; y < gridHeightInHexes; y++)
+        {
+
+            if (currentUnit >= 4)
+                break;
+
+            for (int x = 0; x < gridWidthInHexes; x++)
+            {
+                if (currentUnit >= 4)
+                    break;
+
+                HexTile hta = m_grid[x, y];
+
+                if (m_tileDefinitions[hta.m_type].m_isSolid)
+                    continue;
+
+                SpawnUnit(new TileCoord(x, y), 0, currentUnit);
+                currentUnit++;
+            }
+        }
+
+        currentUnit = 0;
+
+
+
+        for (int y = gridHeightInHexes - 1; y > 0; y--)
+        {
+            if (currentUnit >= 4)
+                break;
+            for (int x = gridWidthInHexes - 1; x > 0; x--)
+            {
+                if (currentUnit >= 4)
+                    break;
+
+                HexTile hta = m_grid[x, y];
+
+                if (m_tileDefinitions[hta.m_type].m_isSolid)
+                    continue;
+
+                SpawnUnit(new TileCoord(x, y), 1, currentUnit);
+                currentUnit++;
+            }
+        }
+
     }
 
     public void SetupCamera()
@@ -334,10 +447,43 @@ public class HexGrid : MonoBehaviour
         m_hexResources.Add(hr);
     }
 
+
+
+    void SpawnUnit(TileCoord tc, int teamNumber, int unitNumber, bool incurCosts = false)
+    {
+        HexTile tileToSpawnAt = m_grid[tc.x, tc.y];
+
+        GameObject g = Instantiate(m_unitPref, tileToSpawnAt.m_worldCenterPos, Quaternion.identity) as GameObject;
+        Destroy(g.GetComponent<Unit>());
+        Unit u = g.AddComponent(s_unitBlueprints[unitNumber]);
+        Team team = m_teams[teamNumber];
+
+        if (incurCosts)
+        {
+            int cost = u.m_cost;
+            if (team.m_goldReserves >= cost)
+            {
+                team.m_goldReserves -= cost;
+            }
+            else
+            {
+                Destroy(u);
+                return;
+            }
+        }
+
+        u.Initialize(team);
+        u.SetPosition(tc);
+        team.AddUnit(u);
+        m_grid[tc.x, tc.y].m_unit = u;
+    }
+
     void SpawnUnit(TileCoord tc, int teamNumber, UnitIdentity unitName, bool incurCosts=false)
     {
 
-        GameObject g = Instantiate(m_unitPref, m_grid[tc.x, tc.y].m_worldCenterPos, Quaternion.identity) as GameObject;
+        HexTile tileToSpawnAt = m_grid[tc.x, tc.y];
+
+        GameObject g = Instantiate(m_unitPref, tileToSpawnAt.m_worldCenterPos, Quaternion.identity) as GameObject;
         Unit u = g.AddComponent<Unit>();
         Team team = m_teams[teamNumber];
 
@@ -397,6 +543,12 @@ public class HexGrid : MonoBehaviour
                 break;
             case UnitIdentity.SNIPER:
                 u.InitializeSniper(new TileCoord(), new Team());
+                break;
+            case UnitIdentity.ARTILLERY:
+                u.InitializeArtillery(new TileCoord(), new Team());
+                break;
+            case UnitIdentity.TANK:
+                u.InitializeTank(new TileCoord(), new Team());
                 break;
         }
 
@@ -603,7 +755,7 @@ public class HexGrid : MonoBehaviour
             {
                 if (u.m_selected)
                 {
-                    u.m_tilesInRange.Clear();
+                    u.m_tilesInMovementRange.Clear();
                     PathingInfo pI = m_pathfinding.DijkstraSearch(u.m_position);
                     FastPriorityQueue<HexTile> order = pI.m_orderedHexTiles;
 
@@ -613,7 +765,7 @@ public class HexGrid : MonoBehaviour
                         if (current.Priority <= u.m_movesRemaining && (current.m_unit == null))
                         {
                             current.m_currentColor = ColorType.MOVEMENT;
-                            u.m_tilesInRange.Add(current);
+                            u.m_tilesInMovementRange.Add(current);
                         }
                         else
                             current.m_currentColor = ColorType.RENDER;
@@ -622,6 +774,32 @@ public class HexGrid : MonoBehaviour
                 }
             }
         }
+    }
+
+    public List<HexTile> GetValidMovableTiles(Unit unit)
+    {
+        PathingInfo pI = m_pathfinding.DijkstraSearch(unit.m_position);
+        FastPriorityQueue<HexTile> order = pI.m_orderedHexTiles;
+
+        List<HexTile> list = new List<HexTile>();
+        int wantedRadius = unit.m_movementRange;
+        int wantedRadiusSquared = wantedRadius * wantedRadius;
+        int maxTiles = (3 * wantedRadiusSquared) - (3 * wantedRadius) + 1;
+        int numAdded = 0;
+
+        while (order.Count > 0)
+        {
+            HexTile current = order.Dequeue();
+            if ((current.Priority <= unit.m_movementRange) && (current.m_unit == null))
+            {
+                list.Add(current);
+                numAdded++;
+                if (numAdded >= maxTiles)
+                    break;
+            }
+        }
+
+        return list;
     }
 
     void OnRightMouseUp()
@@ -707,7 +885,7 @@ public class HexGrid : MonoBehaviour
             {
                 if((lastSelected != null) && lastSelected.m_attemptingAttack)
                 {
-                    lastSelected.m_tilesInRange.Clear(); ;
+                    lastSelected.m_tilesInMovementRange.Clear(); ;
                     lastSelected.m_attemptingAttack = false;
                     m_unitAttemptingAttack = null;
                 
@@ -720,7 +898,7 @@ public class HexGrid : MonoBehaviour
             if (unitClicked == lastSelected && unitClicked.m_hasAction)
                 {
                     if (unitClicked.m_movesRemaining == 0)
-                        unitClicked.m_tilesInRange.Clear();
+                        unitClicked.m_tilesInMovementRange.Clear();
                     m_unitAttemptingAction = unitClicked;
                     unitClicked.ActionMenuOpened();
                     m_actionMenu.SetActive(true);
@@ -735,7 +913,7 @@ public class HexGrid : MonoBehaviour
                     if ((unitClicked.m_movesRemaining <= 0) && unitClicked.m_hasAction)
                     {
                         if (unitClicked.m_movesRemaining == 0)
-                            unitClicked.m_tilesInRange.Clear();
+                            unitClicked.m_tilesInMovementRange.Clear();
                         m_unitAttemptingAction = unitClicked;
                         unitClicked.ActionMenuOpened();
                         m_actionMenu.SetActive(true);
@@ -746,7 +924,7 @@ public class HexGrid : MonoBehaviour
                         return;
                     }
 
-                    unitClicked.m_tilesInRange.Clear();
+                    unitClicked.m_tilesInMovementRange.Clear();
                     PathingInfo pI = m_pathfinding.DijkstraSearch(coord);
                     FastPriorityQueue<HexTile> order = pI.m_orderedHexTiles;
 
@@ -756,7 +934,7 @@ public class HexGrid : MonoBehaviour
                         if ((current.Priority <= unitClicked.m_movesRemaining) && (current.m_unit == null))
                         {
                             current.m_currentColor = ColorType.MOVEMENT;
-                            unitClicked.m_tilesInRange.Add(current);
+                            unitClicked.m_tilesInMovementRange.Add(current);
                         }
                         else
                             current.m_currentColor = ColorType.RENDER;
@@ -789,7 +967,7 @@ public class HexGrid : MonoBehaviour
             bool reachable = false;
             int distance = 999;
 
-            foreach (HexTile h in lastSelected.m_tilesInRange)
+            foreach (HexTile h in lastSelected.m_tilesInMovementRange)
             {
                 TileCoord coord2 = GetTileCoordinateFromWorldPosition(h.m_worldCenterPos);
                 if ((coord2.x == coord.x) && (coord2.y == coord.y))
@@ -882,6 +1060,33 @@ public class HexGrid : MonoBehaviour
         {
             EndTurn();
         }
+    }
+
+    public TileCoord FindNearestEnemy(Unit u)
+    {
+        TileCoord myCoord = u.m_position;
+        TileCoord minLoc = new TileCoord(-1, -1);
+        float minDistance = float.MaxValue;
+
+        foreach (Team t in m_teams)
+        {
+            if (t.m_number == u.m_team)
+                continue;
+
+            foreach (Unit enemy in t.m_units)
+            {
+                TileCoord enemyLoc = enemy.m_position;
+                float distanceToEnemy = Distance(myCoord, enemyLoc);
+                if (distanceToEnemy < minDistance)
+                {
+                    minDistance = distanceToEnemy;
+                    minLoc = enemyLoc;
+                }
+            }
+
+        }
+
+        return minLoc;
     }
 
     void DimInactiveUnits()
@@ -1073,8 +1278,8 @@ public class HexGrid : MonoBehaviour
         {
             for (int y = 0; y < gridHeightInHexes; ++y)
             {
-                HexTile ht = m_grid[x, y];
-                MakeHexWithIndex(ht, (gridWidthInHexes * y) + x);
+               HexTile ht = m_grid[x, y];
+               MakeHexWithIndex(ht, (gridWidthInHexes * y) + x);
             }
         }
 
@@ -1148,7 +1353,7 @@ public class HexGrid : MonoBehaviour
 
     }
 
-       bool IsInRange(float distance)
+       bool IsInSelectedUnitAttackRange(float distance)
     {
         bool isInRange = (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMin)) ||
             (Mathf.Approximately(distance, m_unitAttemptingAttack.m_attackRangeMax));
@@ -1158,23 +1363,44 @@ public class HexGrid : MonoBehaviour
         return isInRange;
     }
 
+    bool IsInUnitAttackRange(Unit u, float distance)
+    {
+        bool isInRange = (Mathf.Approximately(distance, u.m_attackRangeMin)) ||
+            (Mathf.Approximately(distance, u.m_attackRangeMax));
+        isInRange = isInRange ||
+            (distance >= u.m_attackRangeMin &&
+             distance <= u.m_attackRangeMax);
+        return isInRange;
+    }
+
+    public float CubeDistance(Vector3 a, Vector3 b)
+    {
+        return (Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) + Mathf.Abs(a.z - b.z)) / 2f;
+    }
+
+   
+
+
     void UpdateAttackShape()
     {
         Vector3 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         mousePos -= transform.position;
         TileCoord mouseCoord = GetTileCoordinateFromWorldPosition(mousePos);
+
         if (mouseCoord == m_previousTileAttackShapeWasDrawnOn)
             return;
         if (mouseCoord.x < 0 || mouseCoord.y < 0 || mouseCoord.x >= gridWidthInHexes || mouseCoord.y >= gridHeightInHexes)
             return;
+
         TileCoord unitCoord = m_unitAttemptingAttack.m_position;
 
         Vector3 unitPos = m_grid[unitCoord.x, unitCoord.y].m_worldCenterPos;
 
         Vector3 c1 = CubeCoordinatesFromWorldPosition(mousePos);
         Vector3 c2 = CubeCoordinatesFromWorldPosition(unitPos);
-        float distance = Mathf.Max(Mathf.Abs(c1.x - c2.x), Mathf.Abs(c1.y - c2.y), Mathf.Abs(c1.z - c2.z));
-        if (IsInRange(distance))
+        float distance = CubeDistance(c1, c2);
+
+        if (IsInSelectedUnitAttackRange(distance))
         {
             if (m_previousTileAttackShapeWasDrawnOn.x != -1)
             {
@@ -1186,8 +1412,9 @@ public class HexGrid : MonoBehaviour
                         HexTile h = m_grid[newCoord.x, newCoord.y];
                         Vector3 highlightPos = h.m_worldCenterPos;
                         c1 = CubeCoordinatesFromWorldPosition(highlightPos);
-                        distance = Mathf.Max(Mathf.Abs(c1.x - c2.x), Mathf.Abs(c1.y - c2.y), Mathf.Abs(c1.z - c2.z));
-                        if (IsInRange(distance))
+                        distance = CubeDistance(c1, c2);
+
+                        if (IsInSelectedUnitAttackRange(distance))
                             h.m_currentColor = ColorType.ATTACKRANGE;
                         else
                             h.m_currentColor = ColorType.RENDER;
@@ -1205,10 +1432,7 @@ public class HexGrid : MonoBehaviour
                 }
             }
 
-
-
             m_previousTileAttackShapeWasDrawnOn = mouseCoord;
-
         }
     }
 
@@ -1355,7 +1579,9 @@ public class HexGrid : MonoBehaviour
     {
         //Check if selected thing is a factory, if the current team owns it, and
         //if no unit is on it. If all true:
-        m_buildMenu.SetActive(true);
+        //m_buildMenu.SetActive(true);
+        BuildMenu bm = GetComponent<BuildMenu>();
+        bm.EnterMenu();
     }
 
     public void ExitActionMenu()
@@ -1481,17 +1707,19 @@ public class HexGrid : MonoBehaviour
         s_unitBlueprints = new List<Unit>();
 
         Unit scoutBlueprint = GenerateBlueprintUnit(UnitIdentity.SCOUT);
-        scoutBlueprint.InitializeScout(new TileCoord(), new Team());
         s_unitBlueprints.Add(scoutBlueprint);
 
         Unit shockBlueprint = GenerateBlueprintUnit(UnitIdentity.SHOCKTROOPER);
-        shockBlueprint.InitializeShocktrooper(new TileCoord(), new Team());
         s_unitBlueprints.Add(shockBlueprint);
 
         Unit sniperBlueprint = GenerateBlueprintUnit(UnitIdentity.SNIPER);
-        sniperBlueprint.InitializeSniper(new TileCoord(), new Team());
         s_unitBlueprints.Add(sniperBlueprint);
 
+        Unit artilleryBlueprint = GenerateBlueprintUnit(UnitIdentity.ARTILLERY);
+        s_unitBlueprints.Add(artilleryBlueprint);
+
+        Unit tankBlueprint = GenerateBlueprintUnit(UnitIdentity.TANK);
+        s_unitBlueprints.Add(tankBlueprint);
     }
 
     public TileCoord GetTileCoordinateForCurrentMousePosition()
@@ -1502,5 +1730,115 @@ public class HexGrid : MonoBehaviour
         return coord;
     }
 
-}
+    public float Distance(TileCoord a, TileCoord b)
+    {
+        HexTile aH = m_grid[a.x, a.y];
+        HexTile bH = m_grid[b.x, a.y];
 
+        Vector3 cubeA = CubeCoordinatesFromWorldPosition(aH.m_worldCenterPos);
+        Vector3 cubeB = CubeCoordinatesFromWorldPosition(bH.m_worldCenterPos);
+
+        return CubeDistance(cubeA, cubeB);
+    }
+
+    /* @AI_Helpers
+    AI helper functions start here
+    */
+
+
+    /*
+    Finds expected combat result
+    Damage Dealt - Damage Taken
+    */
+    public int GetAttackValue(Unit unitToCheck, Unit enemyUnit)
+    {
+        int positiveValue = 0;
+        int negativeValue = 0;
+
+        TileType attackerTerrain = m_grid[unitToCheck.m_position.x, unitToCheck.m_position.y].m_type;
+        int attackerTerrainDefense = m_tileDefinitions[attackerTerrain].m_defense;
+
+        TileType defenderTerrain = m_grid[enemyUnit.m_position.x, enemyUnit.m_position.y].m_type;
+        int defenderTerrainDefense = m_tileDefinitions[defenderTerrain].m_defense;
+
+        positiveValue = enemyUnit.CalculateDamageTaken(unitToCheck.m_armorPenetration, unitToCheck.m_attackPower, attackerTerrainDefense);
+
+        if (enemyUnit.m_team == unitToCheck.m_team) //Hitting allies with AoE is bad...
+            positiveValue *= -1;
+
+        if (positiveValue < enemyUnit.m_hp && enemyUnit.IsInAttackRange(unitToCheck.m_position)) // Retaliation damage is only taken into account if the attack wouldn't destroy the enemy unit
+        {
+            negativeValue = Mathf.FloorToInt(enemyUnit.m_retaliationDamageFraction * unitToCheck.CalculateDamageTaken(enemyUnit.m_armorPenetration, enemyUnit.m_armorPenetration, defenderTerrainDefense));
+        }
+
+        return positiveValue - negativeValue;
+    }
+
+    /*
+
+    */
+
+    public int CheckAreaAtTarget(Unit attacker, TileCoord target)
+    {
+        int targetLocationValue = 0;
+
+        foreach (TileCoord attackLocations in attacker.m_displacementsForShape)
+        {
+            TileCoord newCoord = new TileCoord(target.x + attackLocations.x, target.y + attackLocations.y);
+            if (newCoord.x >= 0 && newCoord.y >= 0 && newCoord.x < gridWidthInHexes && newCoord.y < gridHeightInHexes)
+            {
+                HexTile checkTile = m_grid[newCoord.x, newCoord.y];
+                if (checkTile.m_unit != null)
+                {
+                    targetLocationValue += GetAttackValue(attacker, checkTile.m_unit);
+                }
+            }
+        }
+        return targetLocationValue;
+    }
+
+    public IEnumerator Sleep(float seconds)
+    {
+        yield return new WaitForSeconds(seconds);
+    }
+
+    /*
+    Finds the attack target position with the best combat result 
+    BRUTE FORCE -- VERY SLOW
+    */
+
+    public AttackSimulationResult GetBestAttackTarget(Unit attacker)
+    {
+        TileCoord maxAttackTargetLocation = new TileCoord(-1, -1);
+        int maxAttackTargetValue = -1;
+
+        TileCoord attackerLoc = attacker.m_position;
+        TileCoord attackerPos = attacker.m_position;
+
+        //Simulates an attack on each tile coordinate in attacker's attack range, and accumulates the values from AoE attacks
+        for (int x = (attackerPos.x - attacker.m_attackRangeMax); x <= (attackerPos.x + attacker.m_attackRangeMax); x++)
+        {
+            for (int y = (attackerPos.y - attacker.m_attackRangeMax); y <= (attackerPos.y + attacker.m_attackRangeMax); y++)
+            {
+                if (x >= 0 && x < gridWidthInHexes && y >= 0 && y < gridHeightInHexes)
+                {
+                    TileCoord tileTargeted = new TileCoord(x, y);
+
+                    int targetLocationValue = CheckAreaAtTarget(attacker, tileTargeted);
+                    if (targetLocationValue > maxAttackTargetValue)
+                    {
+                        maxAttackTargetValue = targetLocationValue;
+                        maxAttackTargetLocation = tileTargeted;
+                    }
+                }
+            }
+        }
+
+        AttackSimulationResult ar;
+        ar.m_coordinate = maxAttackTargetLocation;
+        ar.m_utility = maxAttackTargetValue;
+        return ar;
+    }
+
+
+}

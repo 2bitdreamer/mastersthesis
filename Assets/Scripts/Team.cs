@@ -2,7 +2,8 @@
 using System.Collections;
 using System.Collections.Generic;
 
-public class Team {
+public class Team
+{
     public List<Unit> m_units;
     public float m_income;
     public float m_upkeep;
@@ -65,10 +66,101 @@ public class Team {
         }
     }
 
-    //this is only ever used if the team is AI.
+    /*
+    AI FUNCTIONS WILL START HERE
+    @AI
+    */
+
+    public bool FindAndAttack(Unit u)
+    {
+        bool anyInRange = false;
+
+        foreach(Team t in m_hexGridRef.m_teams)
+        {
+            if (t.m_number == u.m_team)
+                continue;
+
+            foreach (Unit unit in t.m_units)
+            {
+                anyInRange = u.IsInAttackRange(unit.m_position);
+                if (anyInRange)
+                    break;
+            }
+        }
+
+        if (!anyInRange)
+            return false;
+
+
+        AttackSimulationResult attackResult = m_hexGridRef.GetBestAttackTarget(u);
+        if (attackResult.m_utility > 0)
+        {
+                u.DoDamage(attackResult.m_coordinate);
+                return true;
+        }
+
+        return false;
+    }
+
+
     public void DecideAIAction()
     {
+        foreach (Unit u in m_units)
+        {
+            HexTile tileAt = m_hexGridRef.m_grid[u.m_position.x, u.m_position.y];
 
-        m_hexGridRef.Invoke("EndTurn",2f);
+            if (tileAt.m_resource != null && tileAt.m_resource.m_owningTeam != u.m_team) //Sitting on an unowned resource? keep sitting on it..
+            {
+                continue;
+            }
+
+            bool successfulAttack = FindAndAttack(u); //Can I attack a unit in a way that makes it a decent trade-off
+
+            if (!successfulAttack)
+            {
+                List<HexTile> canMoveTo = m_hexGridRef.GetValidMovableTiles(u);
+
+                TileCoord maxAttackTargetLocation = new TileCoord(-1, -1);
+                int maxAttackTargetValue = 0;
+                TileCoord posToMoveTo = new TileCoord(-1, -1);
+
+                //Do I have an OK target in my current move range
+                foreach (HexTile t in canMoveTo)
+                {
+                    TileCoord movePos = t.m_tileCoord;
+
+                    for (int x = (movePos.x - u.m_attackRangeMax); x <= (movePos.x + u.m_attackRangeMax); x++)
+                    {
+                        for (int y = (movePos.y - u.m_attackRangeMax); y <= (movePos.y + u.m_attackRangeMax); y++)
+                        {
+                            if (x >= 0 && x < m_hexGridRef.gridWidthInHexes && y >= 0 && y < m_hexGridRef.gridHeightInHexes)
+                            {
+
+                                TileCoord tileTargeted = new TileCoord(x, y);
+
+                                int targetLocationValue = m_hexGridRef.CheckAreaAtTarget(u, tileTargeted);
+                                if (targetLocationValue > maxAttackTargetValue)
+                                {
+                                    maxAttackTargetValue = targetLocationValue;
+                                    maxAttackTargetLocation = tileTargeted;
+                                    posToMoveTo = movePos;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (posToMoveTo.x != -1)
+                {
+                    u.Move(posToMoveTo);
+                    m_hexGridRef.StartCoroutine(m_hexGridRef.Sleep(1f));
+                    u.DoDamage(maxAttackTargetLocation);
+                }
+
+            }
+        }
+
+
+        m_hexGridRef.Invoke("EndTurn", 1f);
     }
 }

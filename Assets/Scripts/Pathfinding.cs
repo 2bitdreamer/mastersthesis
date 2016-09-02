@@ -21,8 +21,8 @@ public class Pathfinding : MonoBehaviour
         HexTile nodeAtStart = m_hexGridRef.m_grid[start.x, start.y];
 
         FastPriorityQueue<HexTile> unvistedNodes = new FastPriorityQueue<HexTile>(maxQueueSize);
-        int len = m_hexGridRef.m_grid.GetLength(0);
-        int width = m_hexGridRef.m_grid.GetLength(1);
+        int len = m_hexGridRef.gridWidthInHexes;
+        int width = m_hexGridRef.gridHeightInHexes;
 
         for (int i = 0; i < len; i++)
         {
@@ -45,6 +45,11 @@ public class Pathfinding : MonoBehaviour
             List<HexTile> neighbors = m_hexGridRef.GetNeighbors(currentHexTile);
             foreach (HexTile h in neighbors)
             {
+                //Debug.Log(h.m_type);
+                if (h.m_unit != null)
+                {
+                    //Debug.Log(h.m_unit.m_name);
+                }
 
                 if (!(frontier.Contains(h)) && !(m_hexGridRef.GetTileDefinition(h.m_type).m_isSolid)
                     && ((h.m_unit == null) || (h.m_unit.m_team == nodeAtStart.m_unit.m_team)))

@@ -66,6 +66,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Assets\Noise.cs" />
+    <Compile Include="Assets\Scripts\BuildMenu.cs" />
     <Compile Include="Assets\Scripts\CameraController.cs" />
     <Compile Include="Assets\Scripts\DataStructures\FastPriorityQueue.cs" />
     <Compile Include="Assets\Scripts\DataStructures\FastPriorityQueueNode.cs" />
@@ -74,6 +76,7 @@
     <Compile Include="Assets\Scripts\Hex.cs" />
     <Compile Include="Assets\Scripts\HexGrid.cs" />
     <Compile Include="Assets\Scripts\HexResource.cs" />
+    <Compile Include="Assets\Scripts\MapGenerator.cs" />
     <Compile Include="Assets\Scripts\Pan.cs" />
     <Compile Include="Assets\Scripts\Pathfinding.cs" />
     <Compile Include="Assets\Scripts\Scout.cs" />
@@ -81,9 +84,13 @@
     <Compile Include="Assets\Scripts\Sniper.cs" />
     <Compile Include="Assets\Scripts\Square.cs" />
     <Compile Include="Assets\Scripts\Team.cs" />
+    <Compile Include="Assets\Scripts\TextureCreator.cs" />
+    <Compile Include="Assets\Scripts\TextureCreatorInspector.cs" />
     <Compile Include="Assets\Scripts\Unit.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Assets\P4Connect\Editor\p4api.net.xml" />
+    <None Include="Assets\P4Connect\readme.txt" />
     <None Include="Assets\Prefabs\BasicShader.shader" />
     <None Include="Assets\Scripts\DataStructures\PRIORITYQUEUE_LICENSE.txt" />
   </ItemGroup>

@@ -14,13 +14,13 @@ public class Unit : MonoBehaviour {
     public bool m_attemptingAttack = false;
     public bool m_hasAttacked;
     public Vector3 m_charHalfSize;
-    public List<HexTile> m_tilesInRange;
+    public List<HexTile> m_tilesInMovementRange;
     public int m_team;
     public float m_upkeep;
     public bool m_hasAction = true;
     
     public int m_movementRange;
-    public int m_movesRemaining;
+    public int m_movesRemaining; 
 
     //stats
     public int m_hp;
@@ -32,18 +32,25 @@ public class Unit : MonoBehaviour {
     public int m_armorPenetration;
 
     public int m_roughTerrainMovesModifier;
-    public bool m_canAttackAfterMoving;
-    public float m_movesLeftAfterAttackingFraction;
     public int m_captureTurnReduction;
     public int m_captureRatePerTurn;
+
+    public bool m_canAttackAfterMoving;
+    public float m_movesLeftAfterAttackingFraction;
 
     public List<TileCoord> m_displacementsForShape;
     public bool m_hasSpecial;
     public string  m_specialAbilityName;
     public float m_operatingIncomeFraction;
     public float m_retaliationDamageFraction;
+    public string m_name;
 
+    public bool m_pendingKill;
+
+    //Internal data
     private HexGrid m_hexGridRef;
+    private Color m_origColor;
+    private bool m_isFlashing;
 
 
     public Unit()
@@ -54,6 +61,8 @@ public class Unit : MonoBehaviour {
         m_canAttackAfterMoving = true; //#TODO: wanted to make this an int, number of attacks after moving (to allow silly units), but nontrivial in current setup
         m_captureRatePerTurn = 1;
         m_retaliationDamageFraction = 1f;
+        m_isFlashing = false;
+        m_pendingKill = false;
     }
 
     public void Initialize(Team team)
@@ -65,7 +74,7 @@ public class Unit : MonoBehaviour {
         m_selected = false;
         
         m_hexGridRef = GameObject.FindGameObjectWithTag("HexGrid").GetComponent<HexGrid>();
-        m_tilesInRange = new List<HexTile>();
+        m_tilesInMovementRange = new List<HexTile>();
         m_team = team.m_number;
 
         m_textMesh = gameObject.GetComponent<TextMesh>();
@@ -74,6 +83,7 @@ public class Unit : MonoBehaviour {
         m_textMesh.fontSize = 60;
         m_textMesh.text = m_displayCharacter.ToString();
         m_textMesh.color = team.m_color;
+        m_origColor = m_textMesh.color;
 
         // MeshRenderer meshRenderer = gameObject.GetComponent<MeshRenderer>();
         //meshRenderer.material = m_material;
@@ -81,6 +91,7 @@ public class Unit : MonoBehaviour {
 
     public void SetPosition(TileCoord pos)
     {
+        m_position = pos;
         transform.position = m_hexGridRef.m_grid[pos.x, pos.y].m_worldCenterPos;
         Bounds bounds = m_textMesh.GetComponent<Renderer>().bounds;
         m_charHalfSize = bounds.extents;
@@ -99,6 +110,7 @@ public class Unit : MonoBehaviour {
         displacementsForShape.Add(new TileCoord(1, -1));
         displacementsForShape.Add(new TileCoord(0, -1));*/
 
+        m_name = "Scout";
         m_position = pos;
         m_hp = 3;
         m_attackPower = 2;
@@ -131,8 +143,8 @@ public class Unit : MonoBehaviour {
 
     public void InitializeShocktrooper(TileCoord pos, Team team)
     {
-        Initialize(team);
 
+        m_name = "Shocktrooper";
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0));
 
@@ -165,8 +177,6 @@ public class Unit : MonoBehaviour {
 
     public void InitializeArtillery(TileCoord pos, Team team)
     {
-        Initialize(team);
-
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0)); //2,5
         displacementsForShape.Add(new TileCoord(0, 1)); //2,6
@@ -183,12 +193,14 @@ public class Unit : MonoBehaviour {
         m_movementRange = 4;
         m_movesRemaining = m_movementRange;
 
+        m_name = "Artillery";
+
         m_upkeep = 1;
         m_cost = 5;
 
         m_displayCharacter = '%';
         m_displacementsForShape = displacementsForShape;
-        m_attackRangeMin = 2;
+        m_attackRangeMin = 3;
         m_attackRangeMax = 6;
         m_captureTurnReduction = 0;
         m_roughTerrainMovesModifier = 1;
@@ -207,7 +219,8 @@ public class Unit : MonoBehaviour {
 
     public void InitializeSniper(TileCoord pos, Team team)
     {
-        Initialize(team);
+
+        m_name = "Sniper";
 
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0));
@@ -225,7 +238,7 @@ public class Unit : MonoBehaviour {
 
         m_displayCharacter = '>';
         m_displacementsForShape = displacementsForShape;
-        m_attackRangeMin = 1;
+        m_attackRangeMin = 2;
         m_attackRangeMax = 5;
         m_captureTurnReduction = 0;
 
@@ -239,7 +252,8 @@ public class Unit : MonoBehaviour {
 
     public void InitializeTank(TileCoord pos, Team team)
     {
-        Initialize(team);
+
+        m_name = "Tank";
 
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0)); //4,4
@@ -330,7 +344,7 @@ public class Unit : MonoBehaviour {
     
     public virtual void OnAttackPressed()
     {
-        m_tilesInRange.Clear();
+        m_tilesInMovementRange.Clear();
         HexTile[,] grid = m_hexGridRef.m_grid;
 
         foreach(HexTile ht in grid)
@@ -348,7 +362,7 @@ public class Unit : MonoBehaviour {
                 if (x >= 0 && x < m_hexGridRef.gridWidthInHexes && y >= 0 && y < m_hexGridRef.gridHeightInHexes)
                 {
                     HexTile t = grid[x, y];
-                    bool isInRange = IsInRange(new TileCoord(x,y));
+                    bool isInRange = IsInAttackRange(new TileCoord(x,y));
 
                     if (isInRange)
                     {
@@ -369,10 +383,10 @@ public class Unit : MonoBehaviour {
     {
         m_hasAction = false;
         m_movesRemaining = 0;
-        m_tilesInRange.Clear();
+        m_tilesInMovementRange.Clear();
     }
 
-    public bool IsInRange(TileCoord clickedCoord)
+    public bool IsInAttackRange(TileCoord clickedCoord)
     {
         HexTile hexTile = m_hexGridRef.m_grid[clickedCoord.x, clickedCoord.y];
         Vector3 c = m_hexGridRef.CubeCoordinatesFromWorldPosition(hexTile.m_worldCenterPos);
@@ -389,7 +403,7 @@ public class Unit : MonoBehaviour {
     public void DoDamage(TileCoord clickCoord)
     {
         HexTile[,] grid = m_hexGridRef.m_grid;
-        bool isInRange = IsInRange(clickCoord);
+        bool isInRange = IsInAttackRange(clickCoord);
         bool unitInRange = false;
 
         if (isInRange)
@@ -416,7 +430,7 @@ public class Unit : MonoBehaviour {
         {
             m_hasAction = false;
             m_movesRemaining = Mathf.FloorToInt(m_movesLeftAfterAttackingFraction * m_movesRemaining);
-            m_tilesInRange.Clear();
+            m_tilesInMovementRange.Clear();
 
             if (m_movesRemaining == 0)
             {
@@ -444,17 +458,49 @@ public class Unit : MonoBehaviour {
     }
     */
 
+    public int CalculateDamageTaken(int attackerAP, int attackerAttack, int terrainDefense)
+    {
+        int resultDamage = Mathf.Max((attackerAttack - Mathf.Max((m_defense + terrainDefense - attackerAP), 0)), 1); //Change this to be more readable
+        return resultDamage;
+    }
+
+    public void FlashDamage()
+    {
+        if (!m_isFlashing)
+        {
+            m_textMesh.color = Color.yellow;
+            m_isFlashing = true;
+        }
+        else
+        {
+            m_textMesh.color = m_origColor;
+            m_isFlashing = false;
+        }
+    }
+
+    public void StopFlashing()
+    {
+        CancelInvoke("FlashDamage");
+        m_textMesh.color = m_origColor;
+    }
+
+    public void DestroyAndCleanup()
+    {
+        StopFlashing();
+        Destroy(this.gameObject);
+    }
+
     public int TakeDamage(int ap, int dmg)
     {
         TileType tileType = m_hexGridRef.m_grid[m_position.x, m_position.y].m_type;
         int terrainDefense = m_hexGridRef.m_tileDefinitions[tileType].m_defense;
-        Debug.Log("Terrain mitigates damage by " + terrainDefense); 
+        Debug.Log("Terrain mitigates damage by " + terrainDefense);
 
-        int totalDamage = Mathf.Max((dmg - Mathf.Max((m_defense + terrainDefense - ap), 0)), 1); //Change this to be more readable
+        int totalDamage = CalculateDamageTaken(ap, dmg, terrainDefense);
         Debug.Log("Unit took " + totalDamage);
         m_hp -= totalDamage;
 
-        if(m_hp <= 0)
+        if (m_hp <= 0)
         {
             m_hexGridRef.m_grid[m_position.x, m_position.y].m_unit = null;
             m_hexGridRef.m_teams[m_team].RemoveUnit(this);
@@ -473,14 +519,22 @@ public class Unit : MonoBehaviour {
                 }
             }
 
-            //m_hexGridRef.HandleEndOfUnitsAction(this);
-            Destroy(this.gameObject);
+            m_pendingKill = true;
+            m_textMesh.color = Color.black; 
+            m_textMesh.text = "x";
+            Invoke("DestroyAndCleanup", 0.5f);
             return 0;
         }
+        else
+        {
+            InvokeRepeating("FlashDamage", 0.25f, 0.25f);
+            Invoke("StopFlashing", 0.51f);
+        }
+
         return m_hp;
     }
 
-    private float CubeDistance(Vector3 a, Vector3 b)
+    public float CubeDistance(Vector3 a, Vector3 b)
     {
         return (Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) + Mathf.Abs(a.z - b.z)) / 2f;
     }
@@ -489,7 +543,7 @@ public class Unit : MonoBehaviour {
     private void CheckDefenderRetaliation(Unit defender, TileCoord attackerPos)
     {
         HexTile[,] grid = m_hexGridRef.m_grid;
-        bool isInRange = defender.IsInRange(attackerPos);
+        bool isInRange = defender.IsInAttackRange(attackerPos);
 
         if (isInRange)
         {
