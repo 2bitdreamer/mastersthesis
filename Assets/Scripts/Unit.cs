@@ -46,6 +46,7 @@ public class Unit : MonoBehaviour {
     public string m_name;
 
     public bool m_pendingKill;
+    //public FastPriorityQueue<HexTile> m_
 
     //Internal data
     private HexGrid m_hexGridRef;
@@ -63,6 +64,7 @@ public class Unit : MonoBehaviour {
         m_retaliationDamageFraction = 1f;
         m_isFlashing = false;
         m_pendingKill = false;
+        m_position = new TileCoord(-1, -1);
     }
 
     public void Initialize(Team team)
@@ -89,15 +91,6 @@ public class Unit : MonoBehaviour {
         //meshRenderer.material = m_material;
     }
 
-    public void SetPosition(TileCoord pos)
-    {
-        m_position = pos;
-        transform.position = m_hexGridRef.m_grid[pos.x, pos.y].m_worldCenterPos;
-        Bounds bounds = m_textMesh.GetComponent<Renderer>().bounds;
-        m_charHalfSize = bounds.extents;
-        transform.position += new Vector3(-(m_charHalfSize.x), m_charHalfSize.y * .9f, 0f);
-    }
-
     public void InitializeScout(TileCoord pos, Team team)
     {
         List<TileCoord> displacementsForShape = new List<TileCoord>();
@@ -111,7 +104,6 @@ public class Unit : MonoBehaviour {
         displacementsForShape.Add(new TileCoord(0, -1));*/
 
         m_name = "Scout";
-        m_position = pos;
         m_hp = 3;
         m_attackPower = 2;
         m_defense = 0;
@@ -134,7 +126,7 @@ public class Unit : MonoBehaviour {
 
         if (pos.x >= 0)
         {
-            SetPosition(pos);
+            Move(pos);
         }
 
        
@@ -148,7 +140,6 @@ public class Unit : MonoBehaviour {
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0));
 
-        m_position = pos;
         m_hp = 5;
         m_attackPower = 4;
         m_defense = 2;
@@ -169,7 +160,7 @@ public class Unit : MonoBehaviour {
 
         if (pos.x >= 0)
         {
-            SetPosition(pos);
+            Move(pos);
         }
 
     }
@@ -185,7 +176,6 @@ public class Unit : MonoBehaviour {
         displacementsForShape.Add(new TileCoord(-1, 2)); //1,7
         displacementsForShape.Add(new TileCoord(-2, 2)); //0,7
 
-        m_position = pos;
         m_hp = 7;
         m_attackPower = 4;
         m_defense = 2;
@@ -213,7 +203,7 @@ public class Unit : MonoBehaviour {
 
         if (pos.x >= 0)
         {
-            SetPosition(pos);
+            Move(pos);
         }
     }
 
@@ -225,7 +215,6 @@ public class Unit : MonoBehaviour {
         List<TileCoord> displacementsForShape = new List<TileCoord>();
         displacementsForShape.Add(new TileCoord(0, 0));
 
-        m_position = pos;
         m_hp = 2;
         m_attackPower = 5;
         m_defense = 0;
@@ -246,7 +235,7 @@ public class Unit : MonoBehaviour {
 
         if (pos.x >= 0)
         {
-            SetPosition(pos);
+            Move(pos);
         }
     }
 
@@ -272,7 +261,6 @@ public class Unit : MonoBehaviour {
         displacementsForShape.Add(new TileCoord(-2, 0));
 
 
-        m_position = pos;
         m_hp = 12;
         m_attackPower = 3;
         m_defense = 4;
@@ -296,15 +284,24 @@ public class Unit : MonoBehaviour {
 
         if (pos.x >= 0)
         {
-            SetPosition(pos);
+            Move(pos);
         }
     }
 
     public void Move(TileCoord coord)
     {
+
+        if (m_hexGridRef.m_grid[coord.x, coord.y].m_unit != null)
+            Debug.Log("WARNING! TRYING TO PUT A UNIT ON TOP OF ANOTHER ONE!");
+
+        if (m_position.x > -1)
+        {
+            m_hexGridRef.m_grid[m_position.x, m_position.y].m_unit = null;
+        }
+
+        m_hexGridRef.m_grid[coord.x, coord.y].m_unit = this;
+
         m_position = coord;
-        transform.position = m_hexGridRef.m_grid[m_position.x, m_position.y].m_worldCenterPos;
-        transform.position += new Vector3(-m_textMesh.characterSize / 2f, m_textMesh.characterSize / 2f, 0f);
 
         transform.position = m_hexGridRef.m_grid[m_position.x, m_position.y].m_worldCenterPos;
         Bounds bounds = m_textMesh.GetComponent<Renderer>().bounds;
@@ -426,7 +423,7 @@ public class Unit : MonoBehaviour {
                 }
             }
         }
-        if (unitInRange)
+        if (unitInRange && m_team == m_hexGridRef.m_curTeam)
         {
             m_hasAction = false;
             m_movesRemaining = Mathf.FloorToInt(m_movesLeftAfterAttackingFraction * m_movesRemaining);
@@ -468,6 +465,7 @@ public class Unit : MonoBehaviour {
     {
         if (!m_isFlashing)
         {
+            m_origColor = m_textMesh.color;
             m_textMesh.color = Color.yellow;
             m_isFlashing = true;
         }
@@ -487,6 +485,21 @@ public class Unit : MonoBehaviour {
     public void DestroyAndCleanup()
     {
         StopFlashing();
+
+        Team team = m_hexGridRef.m_teams[m_team];
+        if (team.m_units.Count == 0)
+        {
+            switch (team.m_number)
+            {
+                case 0:
+                    m_hexGridRef.m_gameState = GameState.PLAYER_TWO_WINS_ANNIHILATION;
+                    break;
+                case 1:
+                    m_hexGridRef.m_gameState = GameState.PLAYER_ONE_WINS_ANNIHILATION;
+                    break;
+            }
+        }
+
         Destroy(this.gameObject);
     }
 
@@ -504,20 +517,6 @@ public class Unit : MonoBehaviour {
         {
             m_hexGridRef.m_grid[m_position.x, m_position.y].m_unit = null;
             m_hexGridRef.m_teams[m_team].RemoveUnit(this);
-
-            Team team = m_hexGridRef.m_teams[m_team];
-            if (team.m_units.Count == 0)
-            {
-                switch (team.m_number)
-                {
-                    case 0:
-                        m_hexGridRef.m_gameState = GameState.PLAYER_TWO_WINS_ANNIHILATION;
-                        break;
-                    case 1:
-                        m_hexGridRef.m_gameState = GameState.PLAYER_ONE_WINS_ANNIHILATION;
-                        break;
-                }
-            }
 
             m_pendingKill = true;
             m_textMesh.color = Color.black; 
@@ -554,7 +553,7 @@ public class Unit : MonoBehaviour {
                 {
                     HexTile hexTileAt = grid[newCoord.x, newCoord.y];
                     Unit u = hexTileAt.m_unit;
-                    if (u != null)
+                    if (u != null && defender.m_retaliationDamageFraction > 0.0001f)
                     {
                         int modifiedRetaliationDamage = Mathf.FloorToInt(defender.m_attackPower * defender.m_retaliationDamageFraction);
                         u.TakeDamage(defender.m_armorPenetration, modifiedRetaliationDamage);

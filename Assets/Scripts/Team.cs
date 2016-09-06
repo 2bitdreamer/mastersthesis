@@ -127,18 +127,21 @@ public class Team
                 //Do I have an OK target in my current move range
                 foreach (HexTile t in canMoveTo)
                 {
+                    if (!u.m_canAttackAfterMoving)
+                        break;
+
                     TileCoord movePos = t.m_tileCoord;
 
                     for (int x = (movePos.x - u.m_attackRangeMax); x <= (movePos.x + u.m_attackRangeMax); x++)
                     {
                         for (int y = (movePos.y - u.m_attackRangeMax); y <= (movePos.y + u.m_attackRangeMax); y++)
                         {
-                            if (x >= 0 && x < m_hexGridRef.gridWidthInHexes && y >= 0 && y < m_hexGridRef.gridHeightInHexes)
+                            if (m_hexGridRef.IsInBounds(x, y))
                             {
 
                                 TileCoord tileTargeted = new TileCoord(x, y);
 
-                                int targetLocationValue = m_hexGridRef.CheckAreaAtTarget(u, tileTargeted);
+                                int targetLocationValue = m_hexGridRef.CalculateAreaTargetUtility(u, tileTargeted);
                                 if (targetLocationValue > maxAttackTargetValue)
                                 {
                                     maxAttackTargetValue = targetLocationValue;
@@ -152,15 +155,21 @@ public class Team
 
                 if (posToMoveTo.x != -1)
                 {
-                    u.Move(posToMoveTo);
                     m_hexGridRef.StartCoroutine(m_hexGridRef.Sleep(1f));
+                    u.Move(posToMoveTo);
                     u.DoDamage(maxAttackTargetLocation);
+                }
+                else if (canMoveTo.Count > 0)
+                //No attack target in range, just move as far as you can
+                {
+                    u.Move(m_hexGridRef.GetBestMovementLocation(u));
+                    //u.Move(canMoveTo[canMoveTo.Count - 1].m_tileCoord);
                 }
 
             }
         }
 
-
+        m_hexGridRef.StartCoroutine(m_hexGridRef.Sleep(1f));
         m_hexGridRef.Invoke("EndTurn", 1f);
     }
 }

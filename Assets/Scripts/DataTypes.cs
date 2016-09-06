@@ -113,8 +113,10 @@ public class HexTile : FastPriorityQueueNode
         m_unit = null;
         m_resource = resource;
         m_tileCoord = coord;
+        m_currentPathfindingCost = 999.0;
     }
 
+    public double m_currentPathfindingCost;
     public Vector2 m_worldCenterPos;
     public TileCoord m_tileCoord;
     //TODO: Properties

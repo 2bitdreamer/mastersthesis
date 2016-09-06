@@ -7,6 +7,7 @@ using UnityEngine.UI;
 using System.Collections;
 using System;
 using System.Reflection;
+using System.IO;
 
 public class HexGrid : MonoBehaviour
 {
@@ -50,7 +51,7 @@ public class HexGrid : MonoBehaviour
 
     public Dictionary<TileType, TileDefinition> m_tileDefinitions;
     
-    private int m_curTeam = 0;
+    public int m_curTeam = 0;
     private int m_round = 0;
 
     private Text m_UIText;
@@ -158,7 +159,17 @@ public class HexGrid : MonoBehaviour
 
         GameObject ng = GameObject.FindGameObjectWithTag("NoiseGenerator");
         TextureCreator tg = ng.GetComponent<TextureCreator>();
-        tg.GenerateLevelTexture();
+        string filePath = Application.dataPath + "/LevelNoise.png";
+        if (File.Exists(filePath))
+        {
+            byte[] fileData = File.ReadAllBytes(filePath);
+            tg.m_texture = new Texture2D(512, 512);
+            tg.m_texture.LoadImage(fileData); //..this will auto-resize the texture dimensions.
+        }
+        else
+        {
+            tg.GenerateLevelTexture();
+        }
 
 
         //point cloud -- biggest/smallest x and biggest/smallest y used to frame camera
@@ -473,7 +484,7 @@ public class HexGrid : MonoBehaviour
         }
 
         u.Initialize(team);
-        u.SetPosition(tc);
+        u.Move(tc);
         team.AddUnit(u);
         m_grid[tc.x, tc.y].m_unit = u;
     }
@@ -573,7 +584,7 @@ public class HexGrid : MonoBehaviour
         }
     }
 
-    Color GetColorFromTileType(TileType t)
+    Color GetBaseColorFromTileType(TileType t)
     {
         TileDefinition td = m_tileDefinitions[t];
         return td.m_renderColor;
@@ -640,7 +651,7 @@ public class HexGrid : MonoBehaviour
             switch (tile.m_currentColor)
             {
                 case (ColorType.RENDER):
-                    c = GetColorFromTileType(tile.m_type);
+                    c = GetBaseColorFromTileType(tile.m_type);
                     break;
                 case (ColorType.MOVEMENT):
                     c = GetMovementColorFromTileType(tile.m_type);
@@ -779,27 +790,27 @@ public class HexGrid : MonoBehaviour
     public List<HexTile> GetValidMovableTiles(Unit unit)
     {
         PathingInfo pI = m_pathfinding.DijkstraSearch(unit.m_position);
-        FastPriorityQueue<HexTile> order = pI.m_orderedHexTiles;
+        FastPriorityQueue<HexTile> distanceOrderedTiles = pI.m_orderedHexTiles;
 
-        List<HexTile> list = new List<HexTile>();
+        List<HexTile> movableTiles = new List<HexTile>();
         int wantedRadius = unit.m_movementRange;
         int wantedRadiusSquared = wantedRadius * wantedRadius;
         int maxTiles = (3 * wantedRadiusSquared) - (3 * wantedRadius) + 1;
-        int numAdded = 0;
+        int numMovableTiles = 0;
 
-        while (order.Count > 0)
+        while (distanceOrderedTiles.Count > 0)
         {
-            HexTile current = order.Dequeue();
+            HexTile current = distanceOrderedTiles.Dequeue();
             if ((current.Priority <= unit.m_movementRange) && (current.m_unit == null))
             {
-                list.Add(current);
-                numAdded++;
-                if (numAdded >= maxTiles)
+                movableTiles.Add(current);
+                numMovableTiles++;
+                if (numMovableTiles >= maxTiles)
                     break;
             }
         }
 
-        return list;
+        return movableTiles;
     }
 
     void OnRightMouseUp()
@@ -841,12 +852,12 @@ public class HexGrid : MonoBehaviour
 
     void OnLeftMouseUp()
     {
-        TileCoord coord = GetTileCoordinateForCurrentMousePosition();
+        TileCoord tileCoordAtMousePos = GetTileCoordinateForCurrentMousePosition();
 
-        if (coord.x < 0 || coord.y < 0 || coord.x >= gridWidthInHexes || coord.y >= gridHeightInHexes)
+        if (tileCoordAtMousePos.x < 0 || tileCoordAtMousePos.y < 0 || tileCoordAtMousePos.x >= gridWidthInHexes || tileCoordAtMousePos.y >= gridHeightInHexes)
             return;
 
-        Debug.Log("Click Info: " + coord.x + "," + coord.y);
+        Debug.Log("Click Info: " + tileCoordAtMousePos.x + "," + tileCoordAtMousePos.y);
 
         bool drawOutline = true;
         //Debug.Log(clickPos);
@@ -863,10 +874,10 @@ public class HexGrid : MonoBehaviour
                 if (u.m_selected)
                     lastSelected = u;
 
-                if (coord.x == u.m_position.x && coord.y == u.m_position.y)
+                if (tileCoordAtMousePos == u.m_position)
                 {
 
-                    if (u.m_team == m_curTeam)
+                    if (u.m_team == m_curTeam && (u.m_hasAction || u.m_movesRemaining > 0))
                     {
                         unitClicked = u;
                         u.m_selected = true;
@@ -885,7 +896,7 @@ public class HexGrid : MonoBehaviour
             {
                 if((lastSelected != null) && lastSelected.m_attemptingAttack)
                 {
-                    lastSelected.m_tilesInMovementRange.Clear(); ;
+                    lastSelected.m_tilesInMovementRange.Clear();
                     lastSelected.m_attemptingAttack = false;
                     m_unitAttemptingAttack = null;
                 
@@ -899,12 +910,13 @@ public class HexGrid : MonoBehaviour
                 {
                     if (unitClicked.m_movesRemaining == 0)
                         unitClicked.m_tilesInMovementRange.Clear();
+
                     m_unitAttemptingAction = unitClicked;
                     unitClicked.ActionMenuOpened();
                     m_actionMenu.SetActive(true);
-                    Vector2 worldPos = m_grid[coord.x, coord.y].m_worldCenterPos;
-                    DrawSelectedOutlineHex(worldPos, 1f, coord);
-                    m_selectedTileCoords = coord;
+                    Vector2 worldPos = m_grid[tileCoordAtMousePos.x, tileCoordAtMousePos.y].m_worldCenterPos;
+                    DrawSelectedOutlineHex(worldPos, 1f, tileCoordAtMousePos);
+                    m_selectedTileCoords = tileCoordAtMousePos;
                     m_selectedOutline.active = true;
                     return;
                 }
@@ -917,15 +929,15 @@ public class HexGrid : MonoBehaviour
                         m_unitAttemptingAction = unitClicked;
                         unitClicked.ActionMenuOpened();
                         m_actionMenu.SetActive(true);
-                        Vector2 worldPos = m_grid[coord.x, coord.y].m_worldCenterPos;
-                        DrawSelectedOutlineHex(worldPos, 1f, coord);
-                        m_selectedTileCoords = coord;
+                        Vector2 worldPos = m_grid[tileCoordAtMousePos.x, tileCoordAtMousePos.y].m_worldCenterPos;
+                        DrawSelectedOutlineHex(worldPos, 1f, tileCoordAtMousePos);
+                        m_selectedTileCoords = tileCoordAtMousePos;
                         m_selectedOutline.active = true;
                         return;
                     }
 
                     unitClicked.m_tilesInMovementRange.Clear();
-                    PathingInfo pI = m_pathfinding.DijkstraSearch(coord);
+                    PathingInfo pI = m_pathfinding.DijkstraSearch(tileCoordAtMousePos);
                     FastPriorityQueue<HexTile> order = pI.m_orderedHexTiles;
 
                     while (order.Count > 0)
@@ -943,19 +955,19 @@ public class HexGrid : MonoBehaviour
             }
             else
             {
-                m_unitAttemptingAttack.DoDamage(coord);
+                m_unitAttemptingAttack.DoDamage(tileCoordAtMousePos);
                 unitClicked.m_attemptingAttack = false;
                 m_unitAttemptingAttack = null;
             }
         }
         //No unit was selected, so see if a unit was selected previously and if so move it to the clicked position if
-        //that position is in it's movement range.
+        //that position is in its movement range.
 
         else if (lastSelected != null)
         {
             if (lastSelected.m_attemptingAttack)
             {
-                m_unitAttemptingAttack.DoDamage(coord);
+                m_unitAttemptingAttack.DoDamage(tileCoordAtMousePos);
                 lastSelected.m_attemptingAttack = false;
                 m_unitAttemptingAttack = null;
             }
@@ -970,7 +982,7 @@ public class HexGrid : MonoBehaviour
             foreach (HexTile h in lastSelected.m_tilesInMovementRange)
             {
                 TileCoord coord2 = GetTileCoordinateFromWorldPosition(h.m_worldCenterPos);
-                if ((coord2.x == coord.x) && (coord2.y == coord.y))
+                if ((coord2.x == tileCoordAtMousePos.x) && (coord2.y == tileCoordAtMousePos.y))
                 {
                     reachable = true;
                     distance = (int)(h.Priority);
@@ -994,14 +1006,14 @@ public class HexGrid : MonoBehaviour
 
                 lastSelected.m_movesRemaining -= distance;
 
-                lastSelected.Move(coord);
+                lastSelected.Move(tileCoordAtMousePos);
 
                 if (!lastSelected.m_canAttackAfterMoving)
                 {
                     lastSelected.m_hasAction = false;
                 }
 
-                ht = m_grid[coord.x, coord.y];
+                ht = m_grid[tileCoordAtMousePos.x, tileCoordAtMousePos.y];
                 ht.m_unit = lastSelected;
 
                 resource = ht.m_resource;
@@ -1015,9 +1027,9 @@ public class HexGrid : MonoBehaviour
 
         if (drawOutline)
         {
-            Vector2 worldPos = m_grid[coord.x, coord.y].m_worldCenterPos;
-            DrawSelectedOutlineHex(worldPos, 1f, coord);
-            m_selectedTileCoords = coord;
+            Vector2 worldPos = m_grid[tileCoordAtMousePos.x, tileCoordAtMousePos.y].m_worldCenterPos;
+            DrawSelectedOutlineHex(worldPos, 1f, tileCoordAtMousePos);
+            m_selectedTileCoords = tileCoordAtMousePos;
             m_selectedOutline.active = true;
         }
 
@@ -1062,7 +1074,7 @@ public class HexGrid : MonoBehaviour
         }
     }
 
-    public TileCoord FindNearestEnemy(Unit u)
+    public TileCoord GetBestMovementLocation(Unit u)
     {
         TileCoord myCoord = u.m_position;
         TileCoord minLoc = new TileCoord(-1, -1);
@@ -1077,16 +1089,68 @@ public class HexGrid : MonoBehaviour
             {
                 TileCoord enemyLoc = enemy.m_position;
                 float distanceToEnemy = Distance(myCoord, enemyLoc);
-                if (distanceToEnemy < minDistance)
+                TileDefinition enemyTileDef = m_tileDefinitions[m_grid[enemyLoc.x, enemyLoc.y].m_type];
+                int expectedDamage = u.CalculateDamageTaken(u.m_armorPenetration, u.m_attackPower, enemyTileDef.m_defense);
+                if (distanceToEnemy < (minDistance + expectedDamage) && expectedDamage > 0)
                 {
                     minDistance = distanceToEnemy;
                     minLoc = enemyLoc;
                 }
             }
-
         }
 
+
+        HexTile enemyTile = m_grid[minLoc.x, minLoc.y];
+        List<HexTile> tempList = GetPathToEnemy(enemyTile, myCoord);
+        Debug.Log(u.m_name + " Moving!");
+        int maxSlice = Math.Min(tempList.Count - 1, u.m_movementRange - 1);
+        tempList = tempList.GetRange(tempList.Count - maxSlice, maxSlice);
+        minLoc = tempList[tempList.Count - 1].m_tileCoord;
+
         return minLoc;
+    }
+
+    List<HexTile> GetPathToEnemy(HexTile enemyTile, TileCoord myLoc)
+    {
+        List<HexTile> tempList = new List<HexTile>();
+        bool finishedGettingPath = false;
+        while (!finishedGettingPath)
+        {
+            List<HexTile> neighbors = GetNeighbors(enemyTile);
+            double lowestCost = double.MaxValue;
+            HexTile lowestTile = new HexTile(new TileCoord(-1, -1), new Vector2(-1f, -1f));
+            foreach (HexTile t in neighbors)
+            {
+                if (t.m_tileCoord == myLoc)
+                {
+                    return tempList;
+                }
+
+                if (t.m_currentPathfindingCost <= lowestCost)
+                {
+                    lowestCost = t.m_currentPathfindingCost;
+                    lowestTile = t;
+                }
+            }
+
+            if (lowestTile.m_tileCoord.x != -1)
+            {
+                for (int x = 0; x < tempList.Count; x++)
+                {
+                    HexTile curTile = tempList[x];
+                    if (curTile.m_tileCoord == lowestTile.m_tileCoord)
+                    {
+                        Debug.Log("PANIC!!!!!!!!! TRYING TO ADD SAME TILE!");
+                        double myCost = m_grid[myLoc.x + 1, myLoc.y].m_currentPathfindingCost;
+                        return tempList;
+                    }
+                }
+                tempList.Add(lowestTile);
+                enemyTile = lowestTile;
+            }
+        }
+        
+        return tempList;
     }
 
     void DimInactiveUnits()
@@ -1495,6 +1559,7 @@ public class HexGrid : MonoBehaviour
         for (int direction = 0; direction < 6; direction++)
         {
             TileCoord neighborCoords = GetNeighborInDirection(tileCoord, direction);
+
             if (IsInBounds(neighborCoords))
                 neighbors.Add(m_grid[neighborCoords.x, neighborCoords.y]);
 
@@ -1541,6 +1606,8 @@ public class HexGrid : MonoBehaviour
 
     public TileDefinition GetTileDefinition(TileType t)
     {
+        if (t < 0 || t >= TileType.NUM_TYPES)
+            Debug.Log("TileDefinition out of bounds");
         return m_tileDefinitions[t];
     }
 
@@ -1612,7 +1679,13 @@ public class HexGrid : MonoBehaviour
 
     public bool IsInBounds(TileCoord coord)
     {
-        bool inBounds = (coord.x < gridWidthInHexes && coord.x >= 0 && coord.y < gridHeightInHexes && coord.y >= 0);
+        bool inBounds = IsInBounds(coord.x, coord.y);
+        return inBounds;
+    }
+
+    public bool IsInBounds(int x, int y)
+    {
+        bool inBounds = (x < gridWidthInHexes && x >= 0 && y < gridHeightInHexes && y >= 0);
         return inBounds;
     }
 
@@ -1778,7 +1851,7 @@ public class HexGrid : MonoBehaviour
 
     */
 
-    public int CheckAreaAtTarget(Unit attacker, TileCoord target)
+    public int CalculateAreaTargetUtility(Unit attacker, TileCoord target)
     {
         int targetLocationValue = 0;
 
@@ -1824,7 +1897,7 @@ public class HexGrid : MonoBehaviour
                 {
                     TileCoord tileTargeted = new TileCoord(x, y);
 
-                    int targetLocationValue = CheckAreaAtTarget(attacker, tileTargeted);
+                    int targetLocationValue = CalculateAreaTargetUtility(attacker, tileTargeted);
                     if (targetLocationValue > maxAttackTargetValue)
                     {
                         maxAttackTargetValue = targetLocationValue;

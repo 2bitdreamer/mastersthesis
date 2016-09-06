@@ -22,11 +22,6 @@ public static class Noise {
             a[rnd] = temp;
         }
 
-        // Print
-        for (int i = 0; i < a.Length; i++)
-        {
-            Debug.Log(a[i]);
-        }
     }
 
     public static NoiseMethod[] valueMethods = {

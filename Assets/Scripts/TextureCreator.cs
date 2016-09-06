@@ -75,6 +75,6 @@ public class TextureCreator : MonoBehaviour {
 		}
 
         byte[] bytes = m_texture.EncodeToPNG();
-        File.WriteAllBytes(Application.dataPath + "/../LevelNoise.png", bytes);
+        File.WriteAllBytes(Application.dataPath + "/LevelNoise.png", bytes);
     }
 }

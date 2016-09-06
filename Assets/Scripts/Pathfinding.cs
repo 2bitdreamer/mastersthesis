@@ -6,7 +6,6 @@ using System.Collections.Generic;
 
 public class Pathfinding : MonoBehaviour
 {
-    private TileCoord m_start = new TileCoord(0,0);
     private HexGrid m_hexGridRef;
 
     void Start()
@@ -32,6 +31,7 @@ public class Pathfinding : MonoBehaviour
             }
         }
         unvistedNodes.UpdatePriority(nodeAtStart, 0);
+        nodeAtStart.m_currentPathfindingCost = 0;
 
         Dictionary<HexTile, HexTile> cameFrom = new Dictionary<HexTile, HexTile>();
 
@@ -50,15 +50,30 @@ public class Pathfinding : MonoBehaviour
                 {
                     //Debug.Log(h.m_unit.m_name);
                 }
+                else
+                {
+                    //Debug.Log("h.m_unit was null for tile " + h.m_tileCoord.x + "," + h.m_tileCoord.y);
+                }
 
-                if (!(frontier.Contains(h)) && !(m_hexGridRef.GetTileDefinition(h.m_type).m_isSolid)
-                    && ((h.m_unit == null) || (h.m_unit.m_team == nodeAtStart.m_unit.m_team)))
+                bool isNotInFrontier = !(frontier.Contains(h));
+                TileDefinition td = m_hexGridRef.GetTileDefinition(h.m_type);
+                bool isTileDefinitionNotSolid = !td.m_isSolid;
+                bool tileUnitNull = (h.m_unit == null);
+                bool nodeAtStartNull = nodeAtStart == null;
+                Unit unitAt = h.m_unit;
+                int unitTeam = (unitAt != null) ? unitAt.m_team : -1;
+                Unit unitAtStart = nodeAtStart.m_unit;
+                int nodeAtStartTeam = (unitAtStart != null) ? unitAtStart.m_team : -1;
+                bool unitMyTeamOrNull = tileUnitNull || (unitTeam == nodeAtStartTeam);
+
+                if (isNotInFrontier && isTileDefinitionNotSolid && unitMyTeamOrNull)
                 {
                     double oldCost = h.Priority;
                     double newCost = currentHexTile.Priority + m_hexGridRef.GetCost(currentHexTile, h, start);
                     if (newCost < oldCost)
                     {
                         cameFrom[h] = currentHexTile;
+                        currentHexTile.m_currentPathfindingCost = newCost;
                         unvistedNodes.UpdatePriority(h, newCost);
                     }
                 }
